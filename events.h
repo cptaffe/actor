@@ -87,10 +87,18 @@ private:
         return e;
       })();
 
-      // Lock the actors &
-      std::unique_lock<std::mutex> lck(actorsMtx);
-      for (auto a : actors) {
-        a.second->Handle(e);
+      // Lock the actors and generate a list
+      // of actors to call for this event.
+      // NOTE: ordering of events is not guaranteed!
+      for (auto a : ([&]() {
+             std::unique_lock<std::mutex> lck(actorsMtx);
+             std::vector<Actor *> v;
+             for (auto a : actors) {
+               v.push_back(a.second);
+             }
+             return v;
+           })()) {
+        a->Handle(e);
       }
 
       // Event handler ends on encountering
