@@ -63,7 +63,6 @@ private:
       condition.wait(lock, [&] { return !queue.empty() || !alive; });
       if (queue.empty()) {
         // Dead and no events left to process
-        std::cout << "Consumer died" << std::endl;
         return;
       }
       auto t = queue.front();
