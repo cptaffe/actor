@@ -100,6 +100,7 @@ private:
   // Event consumer
   void Consume() {
     for (;;) {
+      auto killAfterRelay = false;
       // Retrieve an event, releasing the lock immediately
       auto e = ([&]() -> Event * {
         std::unique_lock<std::mutex> lck(eventsMtx);
@@ -116,8 +117,7 @@ private:
         // the event to all listening actors
         ([&](Terminate *t) {
           if (t != nullptr) {
-            alive = false;         // end queue
-            eventsCv.notify_all(); // tell all consumers
+            killAfterRelay = true;
           }
         })(dynamic_cast<Terminate *>(e));
 
@@ -129,6 +129,14 @@ private:
       }
       Relay(e);
       delete e;
+
+      // Terminates all consumers,
+      // but allows for events to be added to the queue
+      // in response to the Terminate response which will be processed.
+      if (killAfterRelay) {
+        alive = false;         // end queue
+        eventsCv.notify_all(); // tell all consumers
+      }
     }
   }
 };

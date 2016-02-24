@@ -60,6 +60,11 @@ public:
         }
       }
     })(dynamic_cast<events::Say *>(e));
+    ([&](events::Terminate *t) {
+      if (t != nullptr) {
+        Spawn(new events::Say(this, "My kingdom!"));
+      }
+    })(dynamic_cast<events::Terminate *>(e));
   }
 
 private:
