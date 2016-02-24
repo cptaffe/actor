@@ -40,10 +40,6 @@ public:
       }
     })(dynamic_cast<events::Say *>(e));
   }
-
-private:
-  constexpr static const int maxAssasinationAttempts = 2;
-  int assasinationAttempts = 0;
 };
 
 class Sayer : public Actor {
