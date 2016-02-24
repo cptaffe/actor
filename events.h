@@ -4,7 +4,6 @@
 
 #include "base.h"
 #include "interfaces.h"
-#include <atomic>
 #include <condition_variable>
 #include <map>
 #include <mutex>
