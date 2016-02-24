@@ -114,7 +114,8 @@ private:
 
         // Event handler ends on encountering
         // a terminate event, but only after passing
-        // the event to all listening actors
+        // the event to all listening actors,
+        // and handling all generated events.
         ([&](Terminate *t) {
           if (t != nullptr) {
             killAfterRelay = true;
