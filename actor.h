@@ -9,6 +9,7 @@
 
 #include "base.h"
 #include "events.h"
+#include "util.h"
 
 namespace actors {
 class Actor : public ::Actor {
@@ -54,9 +55,9 @@ public:
             events::EventSpool::Instance()->ActorById("innkeeper")) {
           std::stringstream s;
           s << "guard-" << random(); // Random names so they don't clash
-          Spawn(new events::Say(this, "Damn innkeeper!"));
           Register(s.str(), new Guard());
-          Spawn(new events::Terminate("king is unhappy"));
+          Spawn(new events::Say(this, "Damn innkeeper!"));
+          // Spawn(new events::Terminate("king is unhappy"));
         }
       }
     })(dynamic_cast<events::Say *>(e));
@@ -73,13 +74,21 @@ private:
 
 class Sayer : public Actor {
 public:
+  Sayer() : queue([=](std::string s) { std::cout << s << std::endl; }) {
+    queue.Run(1);
+  }
+  ~Sayer() {
+    queue.Kill();
+    queue.Wait();
+  }
   virtual void Handle(Event *e) override {
     ([&](events::Say *s) {
       if (s != nullptr) {
-        std::cout << s->Said() << std::endl;
+        queue.Put(s->Said());
       }
     })(dynamic_cast<events::Say *>(e));
   }
+  ConsumerQueue<std::string> queue;
 };
 
 } // namespace actors

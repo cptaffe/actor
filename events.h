@@ -37,9 +37,15 @@ public:
     actors.insert({id, a});
   }
 
-  void Run(int threads) { events.Run(threads); }
+  void Run(int threads) {
+    events.Run(threads);
+    handles.Run(threads);
+  }
 
-  void Wait() { events.Wait(); }
+  void Wait() {
+    events.Wait();
+    handles.Wait();
+  }
 
   Actor *ActorById(std::string id) {
     auto a = actors.find(id);
@@ -50,29 +56,18 @@ public:
   }
 
 private:
-  EventSpool() : events([=](Event *e) { Consume(e); }) {}
+  EventSpool()
+      : events([=](Event *e) { Consume(e); }),
+        handles([=](std::pair<Actor *, Event *> t) {
+          t.first->Handle(t.second);
+        }) {}
   EventSpool(EventSpool const &) = delete;
   EventSpool &operator=(EventSpool const &) = delete;
   static EventSpool *instance;
   std::mutex actorsMtx;
   std::map<std::string, Actor *> actors;
   ConsumerQueue<Event *> events;
-
-  // Lock the actors and generate a list
-  // of actors to call for this event.
-  // NOTE: ordering of events is not guaranteed!
-  void Relay(Event *e) {
-    for (auto a : ([&]() {
-           std::unique_lock<std::mutex> lck(actorsMtx);
-           std::vector<Actor *> v;
-           for (auto a : actors) {
-             v.push_back(a.second);
-           }
-           return v;
-         })()) {
-      a->Handle(e);
-    }
-  }
+  ConsumerQueue<std::pair<Actor *, Event *>> handles;
 
   // Event consumer
   void Consume(Event *e) {
@@ -86,14 +81,29 @@ private:
         killAfterRelay = true;
       }
     })(dynamic_cast<Terminate *>(e));
-    Relay(e);
-    delete e;
+
+    // Lock the actors and generate a list
+    // of actors to call for this event.
+    // NOTE: ordering of events is not guaranteed!
+    std::vector<std::pair<Actor *, Event *>> v;
+    for (auto a : ([&]() {
+           std::unique_lock<std::mutex> lck(actorsMtx);
+           std::vector<Actor *> v;
+           for (auto a : actors) {
+             v.push_back(a.second);
+           }
+           return v;
+         })()) {
+      v.push_back({a, e});
+    }
+    handles.Put(v); // only lock once
 
     // Terminates all consumers,
     // but allows for events to be added to the queue
     // in response to the Terminate response which will be processed.
     if (killAfterRelay) {
       events.Kill();
+      handles.Kill();
     }
   }
 };

@@ -23,6 +23,18 @@ public:
     }
   }
 
+  void Put(std::vector<T> v) {
+    std::unique_lock<std::mutex> lock(mutex);
+
+    // Ignore events if terminated
+    if (alive) {
+      for (auto t : v) {
+        queue.push(t);
+      }
+      condition.notify_all();
+    }
+  }
+
   void Kill() {
     std::unique_lock<std::mutex> lock(mutex);
     alive = false;          // end queue
