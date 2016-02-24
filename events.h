@@ -29,22 +29,45 @@ class EventSpool : public Actor {
 public:
   static EventSpool *Instance() { return instance; }
 
-  // TODO: thread-safe producer
-  virtual void Handle(Event *e) override { events.Put(e); }
+  // Use the registered actors as receivers
+  virtual void Handle(Event *e) override {
+    std::vector<std::pair<Actor *, Event *>> v;
+    for (auto a : ([&]() {
+           std::unique_lock<std::mutex> lck(actorsMtx);
+           std::vector<Actor *> v;
+           for (auto a : actors) {
+             v.push_back(a.second);
+           }
+           return v;
+         })()) {
+      v.push_back({a, e});
+    }
+    handles.Put(v);
+
+    // Also handle the event
+    ([=](Terminate *t) {
+      if (t != nullptr) {
+        handles.Kill();
+      }
+    })(dynamic_cast<Terminate *>(e));
+  }
+
+  // Specify receivers for an event
+  void Handle(Event *e, std::vector<Actor *> ac) {
+    std::vector<std::pair<Actor *, Event *>> v;
+    for (auto a : ac) {
+      v.push_back({a, e});
+    }
+    handles.Put(v);
+  }
+
+  void Run(int threads) { handles.Run(threads); }
+
+  void Wait() { handles.Wait(); }
 
   void RegisterActor(std::string id, Actor *a) {
     std::unique_lock<std::mutex> lck(actorsMtx);
     actors.insert({id, a});
-  }
-
-  void Run(int threads) {
-    events.Run(threads);
-    handles.Run(threads);
-  }
-
-  void Wait() {
-    events.Wait();
-    handles.Wait();
   }
 
   Actor *ActorById(std::string id) {
@@ -57,8 +80,7 @@ public:
 
 private:
   EventSpool()
-      : events([=](Event *e) { Consume(e); }),
-        handles([=](std::pair<Actor *, Event *> t) {
+      : handles([=](std::pair<Actor *, Event *> t) {
           t.first->Handle(t.second);
         }) {}
   EventSpool(EventSpool const &) = delete;
@@ -66,46 +88,7 @@ private:
   static EventSpool *instance;
   std::mutex actorsMtx;
   std::map<std::string, Actor *> actors;
-  ConsumerQueue<Event *> events;
   ConsumerQueue<std::pair<Actor *, Event *>> handles;
-
-  // Event consumer
-  void Consume(Event *e) {
-    auto killAfterRelay = false;
-    // Event handler ends on encountering
-    // a terminate event, but only after passing
-    // the event to all listening actors,
-    // and handling all generated events.
-    ([&](Terminate *t) {
-      if (t != nullptr) {
-        killAfterRelay = true;
-      }
-    })(dynamic_cast<Terminate *>(e));
-
-    // Lock the actors and generate a list
-    // of actors to call for this event.
-    // NOTE: ordering of events is not guaranteed!
-    std::vector<std::pair<Actor *, Event *>> v;
-    for (auto a : ([&]() {
-           std::unique_lock<std::mutex> lck(actorsMtx);
-           std::vector<Actor *> v;
-           for (auto a : actors) {
-             v.push_back(a.second);
-           }
-           return v;
-         })()) {
-      v.push_back({a, e});
-    }
-    handles.Put(v); // only lock once
-
-    // Terminates all consumers,
-    // but allows for events to be added to the queue
-    // in response to the Terminate response which will be processed.
-    if (killAfterRelay) {
-      events.Kill();
-      handles.Kill();
-    }
-  }
 };
 
 class Attack : public Event, public interfaces::Attack {

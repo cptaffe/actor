@@ -4,6 +4,7 @@
 
 #include <condition_variable>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -16,23 +17,17 @@ public:
   void Put(T t) {
     std::unique_lock<std::mutex> lock(mutex);
 
-    // Ignore events if terminated
-    if (alive) {
-      queue.push(t);
-      condition.notify_one();
-    }
+    queue.push(t);
+    condition.notify_one();
   }
 
   void Put(std::vector<T> v) {
     std::unique_lock<std::mutex> lock(mutex);
 
-    // Ignore events if terminated
-    if (alive) {
-      for (auto t : v) {
-        queue.push(t);
-      }
-      condition.notify_all();
+    for (auto t : v) {
+      queue.push(t);
     }
+    condition.notify_one();
   }
 
   void Kill() {
@@ -68,6 +63,7 @@ private:
       condition.wait(lock, [&] { return !queue.empty() || !alive; });
       if (queue.empty()) {
         // Dead and no events left to process
+        std::cout << "Consumer died" << std::endl;
         return;
       }
       auto t = queue.front();
