@@ -4,6 +4,7 @@
 
 #include "base.h"
 #include "interfaces.h"
+#include <atomic>
 #include <condition_variable>
 #include <map>
 #include <mutex>
@@ -32,8 +33,12 @@ public:
   // TODO: thread-safe producer
   virtual void Handle(Event *e) override {
     std::unique_lock<std::mutex> lck(eventsMtx);
-    events.push(e);
-    eventsCv.notify_one();
+
+    // Ignore events if terminated
+    if (alive) {
+      events.push(e);
+      eventsCv.notify_one();
+    }
   }
 
   void RegisterActor(std::string id, Actor *a) {
@@ -71,6 +76,7 @@ private:
   std::map<std::string, Actor *> actors;
   std::mutex eventsMtx;
   std::condition_variable eventsCv;
+  bool alive = true; // set to false once terminated
   std::queue<Event *> events;
 
   std::vector<std::thread *> runThreads;
@@ -79,13 +85,21 @@ private:
   void Consume() {
     for (;;) {
       // Retrieve an event, releasing the lock immediately
-      auto e = ([&]() {
+      auto e = ([&]() -> Event * {
         std::unique_lock<std::mutex> lck(eventsMtx);
-        eventsCv.wait(lck, [&] { return !events.empty(); });
+        eventsCv.wait(lck, [&] { return !events.empty() || !alive; });
+        if (events.empty()) {
+          // Dead and no events left to process
+          return nullptr;
+        }
         auto e = events.front();
         events.pop();
         return e;
       })();
+
+      if (e == nullptr) {
+        return; // stop consuming
+      }
 
       // Lock the actors and generate a list
       // of actors to call for this event.
@@ -102,14 +116,17 @@ private:
       }
 
       // Event handler ends on encountering
-      // a terminate event
-      if (([&](Terminate *t) {
-            auto s = t != nullptr;
-            if (s) {
-              Handle(t);
+      // a terminate event, but only after passing
+      // the event to all listening actors
+      if ((([&](Terminate *t) {
+            if (t != nullptr) {
+              std::unique_lock<std::mutex> lck(eventsMtx);
+              alive = false;         // end queue
+              eventsCv.notify_all(); // tell all consumers
+              return true;
             }
-            return s;
-          })(dynamic_cast<Terminate *>(e))) {
+            return false;
+          })(dynamic_cast<Terminate *>(e)))) {
         return;
       }
 

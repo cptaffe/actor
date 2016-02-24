@@ -56,6 +56,7 @@ public:
           s << "guard-" << random(); // Random names so they don't clash
           Spawn(new events::Say(this, "Damn innkeeper!"));
           Register(s.str(), new Guard());
+          Spawn(new events::Terminate("king is unhappy"));
         }
       }
     })(dynamic_cast<events::Say *>(e));
