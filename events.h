@@ -81,6 +81,22 @@ private:
 
   std::vector<std::thread *> runThreads;
 
+  // Lock the actors and generate a list
+  // of actors to call for this event.
+  // NOTE: ordering of events is not guaranteed!
+  void Relay(Event *e) {
+    for (auto a : ([&]() {
+           std::unique_lock<std::mutex> lck(actorsMtx);
+           std::vector<Actor *> v;
+           for (auto a : actors) {
+             v.push_back(a.second);
+           }
+           return v;
+         })()) {
+      a->Handle(e);
+    }
+  }
+
   // Event consumer
   void Consume() {
     for (;;) {
@@ -94,42 +110,24 @@ private:
         }
         auto e = events.front();
         events.pop();
+
+        // Event handler ends on encountering
+        // a terminate event, but only after passing
+        // the event to all listening actors
+        ([&](Terminate *t) {
+          if (t != nullptr) {
+            alive = false;         // end queue
+            eventsCv.notify_all(); // tell all consumers
+          }
+        })(dynamic_cast<Terminate *>(e));
+
         return e;
       })();
 
       if (e == nullptr) {
         return; // stop consuming
       }
-
-      // Lock the actors and generate a list
-      // of actors to call for this event.
-      // NOTE: ordering of events is not guaranteed!
-      for (auto a : ([&]() {
-             std::unique_lock<std::mutex> lck(actorsMtx);
-             std::vector<Actor *> v;
-             for (auto a : actors) {
-               v.push_back(a.second);
-             }
-             return v;
-           })()) {
-        a->Handle(e);
-      }
-
-      // Event handler ends on encountering
-      // a terminate event, but only after passing
-      // the event to all listening actors
-      if ((([&](Terminate *t) {
-            if (t != nullptr) {
-              std::unique_lock<std::mutex> lck(eventsMtx);
-              alive = false;         // end queue
-              eventsCv.notify_all(); // tell all consumers
-              return true;
-            }
-            return false;
-          })(dynamic_cast<Terminate *>(e)))) {
-        return;
-      }
-
+      Relay(e);
       delete e;
     }
   }
