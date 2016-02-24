@@ -5,13 +5,24 @@
 #include "base.h"
 #include "interfaces.h"
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <thread>
-#include <vector>
 
 namespace events {
+
+class Terminate : public Event {
+public:
+  Terminate(std::string s) : reason(s) {}
+  virtual std::string Description() override {
+    return "Terminating: " + reason;
+  }
+
+private:
+  std::string reason;
+};
 
 // Event Spool singleton
 class EventSpool : public Actor {
@@ -25,35 +36,49 @@ public:
     eventsCv.notify_one();
   }
 
-  void RegisterActor(Actor *a) {
+  void RegisterActor(std::string id, Actor *a) {
     std::unique_lock<std::mutex> lck(actorsMtx);
-    actors.push_back(a);
+    actors.insert({id, a});
   }
 
-  void Wait() { runThread.join(); }
+  void Run(int threads) {
+    for (int i = 0; i < threads; i++) {
+      runThreads.push_back(new std::thread([&] { Instance()->Consume(); }));
+    }
+  }
+
+  void Wait() {
+    // Join worker threads
+    for (auto t : runThreads) {
+      t->join();
+    }
+  }
+
+  Actor *ActorById(std::string id) {
+    auto a = actors.find(id);
+    if (a != actors.end()) {
+      return a->second;
+    }
+    return nullptr;
+  }
 
 private:
-  EventSpool() {
-    std::cout << "running thread" << std::endl;
-    runThread = std::thread([&] {
-      std::cout << "starting run" << std::endl;
-      Instance()->Run();
-    });
-  }
+  EventSpool() {}
   EventSpool(EventSpool const &) = delete;
   EventSpool &operator=(EventSpool const &) = delete;
   static EventSpool *instance;
   std::mutex actorsMtx;
-  std::vector<Actor *> actors;
+  std::map<std::string, Actor *> actors;
   std::mutex eventsMtx;
   std::condition_variable eventsCv;
   std::queue<Event *> events;
 
-  std::thread runThread;
+  std::vector<std::thread *> runThreads;
 
   // Event consumer
-  void Run() {
+  void Consume() {
     for (;;) {
+      // Retrieve an event, releasing the lock immediately
       auto e = ([&]() {
         std::unique_lock<std::mutex> lck(eventsMtx);
         eventsCv.wait(lck, [&] { return !events.empty(); });
@@ -62,10 +87,25 @@ private:
         return e;
       })();
 
+      // Lock the actors &
       std::unique_lock<std::mutex> lck(actorsMtx);
       for (auto a : actors) {
-        a->Handle(e);
+        a.second->Handle(e);
       }
+
+      // Event handler ends on encountering
+      // a terminate event
+      if (([&](Terminate *t) {
+            auto s = t != nullptr;
+            if (s) {
+              Handle(t);
+            }
+            return s;
+          })(dynamic_cast<Terminate *>(e))) {
+        return;
+      }
+
+      delete e;
     }
   }
 };
@@ -95,14 +135,16 @@ private:
 
 class Say : public Event, public interfaces::Sayable {
 public:
-  Say(std::string s) : _s(s) {}
+  Say(Actor *v, std::string s) : _saying(s), _voice(v) {}
   virtual std::string Description() override {
     return "Someone said something";
   }
-  virtual std::string Said() override { return _s; }
+  virtual std::string Said() override { return _saying; }
+  virtual Actor *Who() { return _voice; }
 
 private:
-  std::string _s;
+  std::string _saying;
+  Actor *_voice;
 };
 
 class TaxEvent : public Event, public interfaces::TaxChange {
