@@ -18,7 +18,7 @@ class Actor : public ::Actor {
 protected:
   void Spawn(Event *e) { Spool::Instance()->Handle(e); }
   void Register(std::string id, ::Actor *a) {
-    Spool::Instance()->RegisterActor(id, a);
+    Spool::Instance()->Register(id, a);
   }
 };
 

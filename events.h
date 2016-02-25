@@ -66,7 +66,7 @@ public:
   }
 
 private:
-  int _offset;
+  double _offset;
 };
 
 } // namespace events
