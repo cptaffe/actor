@@ -9,14 +9,16 @@
 
 #include "base.h"
 #include "events.h"
+#include "interfaces.h"
+#include "spool.h"
 #include "util.h"
 
 namespace actors {
 class Actor : public ::Actor {
 protected:
-  void Spawn(Event *e) { events::EventSpool::Instance()->Handle(e); }
+  void Spawn(Event *e) { Spool::Instance()->Handle(e); }
   void Register(std::string id, ::Actor *a) {
-    events::EventSpool::Instance()->RegisterActor(id, a);
+    Spool::Instance()->RegisterActor(id, a);
   }
 };
 
@@ -38,7 +40,7 @@ class Guard : public Actor {
     // Respond to an attack
     ([&](events::Say *s) {
       if (s != nullptr) {
-        if (s->Who() == events::EventSpool::Instance()->ActorById("king")) {
+        if (s->Who() == Spool::Instance()->ActorById("king")) {
           Spawn(new events::Say(this, "Yeah! " + s->Said()));
         }
       }
@@ -51,8 +53,7 @@ public:
   virtual void Handle(Event *e) override {
     ([&](events::Say *s) {
       if (s != nullptr) {
-        if (s->Who() ==
-            events::EventSpool::Instance()->ActorById("innkeeper")) {
+        if (s->Who() == Spool::Instance()->ActorById("innkeeper")) {
           std::stringstream s;
           s << "guard-" << random(); // Random names so they don't clash
           Register(s.str(), new Guard());

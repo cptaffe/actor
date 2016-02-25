@@ -17,4 +17,10 @@ public:
   virtual void Handle(Event *e) = 0;
 };
 
+class Renderable {
+public:
+  virtual ~Renderable() {}
+  virtual void Render() = 0;
+};
+
 #endif // B_BASE_H_

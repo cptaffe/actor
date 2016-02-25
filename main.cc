@@ -9,13 +9,13 @@
 #include "events.h"
 #include "interfaces.h"
 
-events::EventSpool *events::EventSpool::instance = new events::EventSpool;
+Spool *Spool::instance = new Spool;
 
 int main() {
-  auto s = events::EventSpool::Instance();
-  s->RegisterActor("king", new actors::King());
-  s->RegisterActor("innkeeper", new actors::Npc());
-  s->RegisterActor("speech", new actors::Sayer());
+  auto s = Spool::Instance();
+  s->Register("king", new actors::King());
+  s->Register("innkeeper", new actors::Npc());
+  s->Register("speech", new actors::Sayer());
   auto t = new std::thread([&] {
     for (auto i = 0; i < 10; i++) {
       s->Handle(new events::Say(nullptr, "hey"));

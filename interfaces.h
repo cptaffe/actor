@@ -2,9 +2,15 @@
 #ifndef B_INTERFACES_H_
 #define B_INTERFACES_H_
 
-#include "actor.h"
+#include "base.h"
 
 namespace interfaces {
+
+// Terminal (exit loop)
+class Terminal {
+public:
+  virtual ~Terminal() {}
+};
 
 // may be killed
 class Killable {

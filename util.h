@@ -67,7 +67,7 @@ private:
       }
       auto t = queue.front();
       queue.pop();
-      lock.unlock(); // unlocks the lock
+      lock.unlock();
       consumer(t);
     }
   }
