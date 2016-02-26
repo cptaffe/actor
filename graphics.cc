@@ -3,10 +3,76 @@
 #include <GLFW/glfw3.h>
 
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <streambuf>
 #include <vector>
+
+namespace graphics {
+
+class ProgramBuilder {
+public:
+  ProgramBuilder() : programHandle(glCreateProgram()) {}
+
+  ProgramBuilder AddVertexShader(std::string src) {
+    shaders.insert({glCreateShader(GL_VERTEX_SHADER), src});
+    return *this;
+  }
+
+  ProgramBuilder AddFragmentShader(std::string src) {
+    shaders.insert({glCreateShader(GL_FRAGMENT_SHADER), src});
+    return *this;
+  }
+
+  GLuint Build() {
+    CompileShaders();
+    DeleteShaders();
+    return programHandle;
+  }
+
+private:
+  GLuint programHandle;
+  std::map<GLuint, std::string> shaders;
+
+  void CompileShaders() {
+    // Error checking wrapper function
+    auto check = [=](void (*f)(GLuint, GLenum, GLint *), GLuint handle,
+                     std::string err) {
+      GLint res;
+      f(handle, GL_COMPILE_STATUS, &res);
+      int ll;
+      f(handle, GL_INFO_LOG_LENGTH, &ll);
+      std::cout << "log length: " << ll << std::endl;
+      if (!res) {
+        auto v = std::vector<char>(ll + 1);
+        glGetShaderInfoLog(handle, ll, nullptr, v.data());
+        throw std::runtime_error(err + ": " + std::string(v.begin(), v.end()));
+      }
+    };
+
+    for (auto s : shaders) {
+      auto sc = s.second.c_str();
+      glShaderSource(s.first, 1, &sc, nullptr);
+      glCompileShader(s.first);
+      check(glGetShaderiv, s.first, "error compiling shader");
+      glAttachShader(programHandle, s.first);
+    }
+
+    glLinkProgram(programHandle);
+    check(glGetProgramiv, programHandle, "error linking program");
+  }
+
+  void DeleteShaders() {
+    for (auto s : shaders) {
+      glDetachShader(programHandle, s.first);
+      glDeleteShader(s.first);
+    }
+  }
+};
+
+} // namespace graphics
 
 int main() {
   if (!glfwInit()) {
@@ -46,67 +112,23 @@ int main() {
   glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertices.size(),
                vertices.data(), GL_STATIC_DRAW);
 
-  auto programID = ([=](std::string vs, std::string fs) {
-    auto vsID = glCreateShader(GL_VERTEX_SHADER);
-    auto fsID = glCreateShader(GL_FRAGMENT_SHADER);
+  auto readFile = [=](std::string s) {
+    auto f = std::ifstream(s);
+    return std::string(std::istreambuf_iterator<char>(f),
+                       std::istreambuf_iterator<char>());
+  };
 
-    auto readFile = [=](std::string s) {
-      auto f = std::ifstream(s);
-      return std::string(std::istreambuf_iterator<char>(f),
-                         std::istreambuf_iterator<char>());
-    };
-
-    auto programID = glCreateProgram();
-    for (auto s : ([=](std::vector<std::pair<GLuint, std::string>> v) {
-           std::vector<std::pair<GLuint, std::string>> ov;
-           for (auto a : v) {
-             ov.push_back({a.first, readFile(a.second)});
-           }
-           return ov;
-         })({{vsID, vs}, {fsID, fs}})) {
-      auto sc = s.second.c_str();
-      glShaderSource(s.first, 1, &sc, nullptr);
-      glCompileShader(s.first);
-      GLint res;
-      glGetShaderiv(s.first, GL_COMPILE_STATUS, &res);
-      int ll;
-      glGetShaderiv(s.first, GL_INFO_LOG_LENGTH, &ll);
-      if (!res) {
-        auto v = std::vector<char>(ll + 1);
-        glGetShaderInfoLog(s.first, ll, nullptr, v.data());
-        throw std::runtime_error("error compiling shader: " +
-                                 std::string(v.begin(), v.end()));
-      }
-      glAttachShader(programID, s.first);
-    }
-    glLinkProgram(programID);
-
-    GLint res;
-    glGetProgramiv(programID, GL_COMPILE_STATUS, &res);
-    int ll;
-    glGetShaderiv(programID, GL_INFO_LOG_LENGTH, &ll);
-    if (!res) {
-      auto v = std::vector<char>(ll + 1);
-      glGetProgramInfoLog(programID, ll, nullptr, v.data());
-      throw std::runtime_error("error linking program: " +
-                               std::string(v.begin(), v.end()));
-    }
-
-    for (auto s : std::vector<GLuint>({vsID, fsID})) {
-      glDetachShader(programID, s);
-      glDeleteShader(s);
-    }
-
-    return programID;
-
-  })("shaders/triangle.vert", "shaders/triangle.frag");
+  auto programHandle = graphics::ProgramBuilder()
+                           .AddVertexShader(readFile("shaders/triangle.vert"))
+                           .AddFragmentShader(readFile("shaders/triangle.frag"))
+                           .Build();
 
   do {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, buf);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, static_cast<void *>(0));
-    glUseProgram(programID);
+    glUseProgram(programHandle);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glDisableVertexAttribArray(0);
 
