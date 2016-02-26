@@ -123,7 +123,7 @@ int main() {
                            .AddFragmentShader(readFile("shaders/triangle.frag"))
                            .Build();
 
-  do {
+  for (;;) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, buf);
@@ -135,7 +135,9 @@ int main() {
     glfwSwapBuffers(window);
     glfwPollEvents();
 
-  } // Check if the ESC key was pressed or the window was closed
-  while (glfwGetKey(window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
-         !glfwWindowShouldClose(window));
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
+        glfwWindowShouldClose(window)) {
+      break;
+    }
+  }
 }
