@@ -71,7 +71,7 @@ int main() {
       glGetShaderiv(s.first, GL_COMPILE_STATUS, &res);
       int ll;
       glGetShaderiv(s.first, GL_INFO_LOG_LENGTH, &ll);
-      if (ll > 0) {
+      if (!res) {
         auto v = std::vector<char>(ll + 1);
         glGetShaderInfoLog(s.first, ll, nullptr, v.data());
         throw std::runtime_error("error compiling shader: " +
@@ -85,7 +85,7 @@ int main() {
     glGetProgramiv(programID, GL_COMPILE_STATUS, &res);
     int ll;
     glGetShaderiv(programID, GL_INFO_LOG_LENGTH, &ll);
-    if (ll > 0) {
+    if (!res) {
       auto v = std::vector<char>(ll + 1);
       glGetProgramInfoLog(programID, ll, nullptr, v.data());
       throw std::runtime_error("error linking program: " +
