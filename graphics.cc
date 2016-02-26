@@ -2,19 +2,71 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+#include <atomic>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <streambuf>
 #include <vector>
 
 namespace graphics {
 
+class Window {
+public:
+  Window() {
+    if (!glfwInit()) {
+      throw std::runtime_error("glfw initialization failed");
+    }
+
+    glfwSetErrorCallback([](int l, const char *msg) {
+      throw std::runtime_error("glfw3 error: " + std::string(msg, l));
+    });
+
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    window = glfwCreateWindow(1024, 768, "Tutorial 01", nullptr, nullptr);
+    if (window == nullptr) {
+      throw std::runtime_error("glfw create window failed");
+    }
+    glfwMakeContextCurrent(window);
+
+    glewExperimental = true;
+    if (glewInit() != GLEW_OK) {
+      throw std::runtime_error("failed to initialize glew");
+    }
+
+    glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+  }
+
+  bool ShouldClose() { return glfwWindowShouldClose(window); }
+
+  int Key(int key) { return glfwGetKey(window, key); }
+
+  void Swap() { glfwSwapBuffers(window); }
+
+private:
+  GLFWwindow *window;
+};
+
 class ProgramBuilder {
 public:
-  ProgramBuilder() : programHandle(glCreateProgram()) {}
+  ProgramBuilder() : programHandle(glCreateProgram()) {
+    if (!([=] {
+          GLboolean support;
+          glGetBooleanv(GL_SHADER_COMPILER, &support);
+          return support;
+        })()) {
+      throw std::runtime_error("no shader support");
+    }
+  }
 
   ProgramBuilder AddVertexShader(std::string src) {
     shaders.insert({glCreateShader(GL_VERTEX_SHADER), src});
@@ -38,17 +90,20 @@ private:
 
   void CompileShaders() {
     // Error checking wrapper function
-    auto check = [=](void (*f)(GLuint, GLenum, GLint *), GLuint handle,
-                     std::string err) {
+    auto check = [=](void (*f)(GLuint, GLenum, GLint *),
+                     void (*l)(GLenum, GLsizei, GLsizei *, GLchar *),
+                     GLenum status, GLuint handle, std::string err) {
       GLint res;
-      f(handle, GL_COMPILE_STATUS, &res);
+      f(handle, status, &res);
       int ll;
       f(handle, GL_INFO_LOG_LENGTH, &ll);
-      std::cout << "log length: " << ll << std::endl;
-      if (!res) {
-        auto v = std::vector<char>(ll + 1);
-        glGetShaderInfoLog(handle, ll, nullptr, v.data());
-        throw std::runtime_error(err + ": " + std::string(v.begin(), v.end()));
+      if (res == GL_FALSE) {
+        std::vector<char> v(ll + 1);
+        l(handle, ll + 1, &ll, v.data());
+        throw std::runtime_error(err + ": " +
+                                 std::string(reinterpret_cast<const char *>(
+                                     gluErrorString(glGetError()))) +
+                                 ", " + std::string(v.begin(), v.end()));
       }
     };
 
@@ -56,12 +111,17 @@ private:
       auto sc = s.second.c_str();
       glShaderSource(s.first, 1, &sc, nullptr);
       glCompileShader(s.first);
-      check(glGetShaderiv, s.first, "error compiling shader");
+      std::cout << "compiling shader: " << std::endl
+                << "```" << std::endl
+                << s.second << "```" << std::endl;
+      check(glGetShaderiv, glGetShaderInfoLog, GL_COMPILE_STATUS, s.first,
+            "error compiling shader");
       glAttachShader(programHandle, s.first);
     }
 
     glLinkProgram(programHandle);
-    check(glGetProgramiv, programHandle, "error linking program");
+    check(glGetProgramiv, glGetProgramInfoLog, GL_LINK_STATUS, programHandle,
+          "error linking program");
   }
 
   void DeleteShaders() {
@@ -75,30 +135,7 @@ private:
 } // namespace graphics
 
 int main() {
-  if (!glfwInit()) {
-    throw std::runtime_error("glfw initialization failed");
-  }
-
-  glfwWindowHint(GLFW_SAMPLES, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-  auto window = glfwCreateWindow(1024, 768, "Tutorial 01", nullptr, nullptr);
-  if (window == nullptr) {
-    glfwTerminate();
-    throw std::runtime_error(
-        "failed to open glfw window. If you have an Intel GPU, they "
-        "are not 3.3 compatible. Try the 2.1 version of the tutorials.");
-  }
-  glfwMakeContextCurrent(window);
-  glewExperimental = true;
-  if (glewInit() != GLEW_OK) {
-    throw std::runtime_error("failed to initialize glew");
-  }
-
-  glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+  graphics::Window window;
 
   GLuint vaID;
   glGenVertexArrays(1, &vaID);
@@ -132,11 +169,10 @@ int main() {
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glDisableVertexAttribArray(0);
 
-    glfwSwapBuffers(window);
+    window.Swap();
     glfwPollEvents();
 
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
-        glfwWindowShouldClose(window)) {
+    if (window.Key(GLFW_KEY_ESCAPE) == GLFW_PRESS || window.ShouldClose()) {
       break;
     }
   }
