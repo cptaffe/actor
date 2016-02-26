@@ -13,6 +13,11 @@
 template <typename T> class ConsumerQueue {
 public:
   ConsumerQueue(std::function<void(T)> c) : consumer(c) {}
+  ~ConsumerQueue() {
+    for (auto t : threads) {
+      delete t;
+    }
+  }
 
   void Put(T t) {
     std::unique_lock<std::mutex> lock(mutex);
