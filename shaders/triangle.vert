@@ -1,8 +1,9 @@
 #version 330 core
 
-layout(location = 0) in vec3 vPos; // vertex position
+layout(location = 0) in vec4 vPos; // vertex position
+
+uniform mat4 model_view_projection;
 
 void main() {
-  gl_Position.xyz = vPos;
-  gl_Position.w = 1.0;
+  gl_Position = model_view_projection * vec4(vPos.xyz, 1);
 }
