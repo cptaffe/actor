@@ -3,14 +3,17 @@
 #include <GLFW/glfw3.h>
 
 #include <atomic>
+#include <chrono>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <streambuf>
+#include <thread>
 #include <vector>
 
 namespace graphics {
@@ -68,9 +71,19 @@ public:
     }
   }
 
+  ProgramBuilder AddVertexShader(std::istream &src) {
+    return AddVertexShader(std::string(std::istreambuf_iterator<char>(src),
+                                       std::istreambuf_iterator<char>()));
+  }
+
   ProgramBuilder AddVertexShader(std::string src) {
     shaders.insert({glCreateShader(GL_VERTEX_SHADER), src});
     return *this;
+  }
+
+  ProgramBuilder AddFragmentShader(std::istream &src) {
+    return AddFragmentShader(std::string(std::istreambuf_iterator<char>(src),
+                                         std::istreambuf_iterator<char>()));
   }
 
   ProgramBuilder AddFragmentShader(std::string src) {
@@ -141,6 +154,8 @@ int main() {
   glGenVertexArrays(1, &vaID);
   glBindVertexArray(vaID);
 
+  std::atomic_flag verticesSynced;
+  std::mutex vmutex;
   std::vector<GLfloat> vertices = {-1, -1, 0, 1, -1, 0, 0, 1, 0};
 
   GLuint buf;
@@ -149,18 +164,36 @@ int main() {
   glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertices.size(),
                vertices.data(), GL_STATIC_DRAW);
 
-  auto readFile = [=](std::string s) {
-    auto f = std::ifstream(s);
-    return std::string(std::istreambuf_iterator<char>(f),
-                       std::istreambuf_iterator<char>());
-  };
+  auto programHandle = ([=] {
+    auto vshader = std::ifstream("shaders/triangle.vert");
+    auto fshader = std::ifstream("shaders/triangle.frag");
+    return graphics::ProgramBuilder()
+        .AddVertexShader(vshader)
+        .AddFragmentShader(fshader)
+        .Build();
+  })();
 
-  auto programHandle = graphics::ProgramBuilder()
-                           .AddVertexShader(readFile("shaders/triangle.vert"))
-                           .AddFragmentShader(readFile("shaders/triangle.frag"))
-                           .Build();
+  // transform the coordinates of the triangle over time.
+  auto t = std::thread([&] {
+    std::mt19937_64 random;
+    std::uniform_real_distribution<double> dist(0.9, 1.1);
+    auto rand = std::bind(dist, random);
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::unique_lock<std::mutex> lock(vmutex);
+      verticesSynced.clear();
+      for (auto &v : vertices) {
+        v = v * rand();
+      }
+    }
+  });
 
   for (;;) {
+    if (verticesSynced.test_and_set()) {
+      std::unique_lock<std::mutex> lock(vmutex);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertices.size(),
+                   vertices.data(), GL_STATIC_DRAW);
+    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, buf);
