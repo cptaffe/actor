@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -147,22 +148,111 @@ private:
 
 } // namespace graphics
 
+class Timer {
+public:
+  Timer() {}
+  std::chrono::duration<double> Delta() {
+    return std::chrono::high_resolution_clock::now() - last;
+  }
+  static void Update() { last = std::chrono::high_resolution_clock::now(); }
+
+private:
+  static std::chrono::time_point<std::chrono::high_resolution_clock> last;
+};
+
+class Renderable {
+public:
+  virtual ~Renderable(){};
+
+  class Point {
+  public:
+    double x, y, z;
+  };
+
+  virtual std::vector<Point> Render() = 0;
+};
+
+class EquilateralTriangle : public Renderable {
+public:
+  EquilateralTriangle(Point o, double r)
+      : vertices({{o.x - (r * 1), o.y - (r * 1), o.z},
+                  {o.x + (r * 1), o.y - (r * 1), o.z},
+                  {o.x, o.y + (r * 1), o.z}}) {}
+  virtual std::vector<Point> Render() { return vertices; }
+
+private:
+  std::vector<Point> vertices;
+};
+
+class Float : public Renderable {
+public:
+  Float(Renderable *r, double rad, std::chrono::duration<double> d)
+      : renderable(r), radius(rad), duration(d) {}
+  virtual std::vector<Point> Render() {
+    auto v = renderable->Render();
+    for (auto &p : v) {
+      p.y += radius * cos(timer.Delta() / duration * 2);
+    }
+    return v;
+  }
+
+private:
+  Renderable *renderable;
+  double radius;
+  std::chrono::duration<double> duration;
+  Timer timer;
+};
+
+class Spin : public Renderable {
+public:
+  Spin(Renderable *r, std::chrono::duration<double> d)
+      : renderable(r), duration(d) {}
+  virtual std::vector<Point> Render() {
+    auto v = renderable->Render();
+    Point op;
+    for (auto &p : v) {
+      op.x += p.x;
+      op.y += p.y;
+      op.z += p.z;
+    }
+    op.x /= v.size();
+    op.y /= v.size();
+    op.z /= v.size();
+    for (auto &p : v) {
+      p.x = ((p.x - op.x) * cos(timer.Delta() / duration * 2)) + op.x;
+      p.z = ((p.z - op.z) * sin(timer.Delta() / duration * 2)) + op.z;
+    }
+    return v;
+  }
+
+private:
+  Renderable *renderable;
+  std::chrono::duration<double> duration;
+  Timer timer;
+};
+
+std::chrono::time_point<std::chrono::high_resolution_clock> Timer::last;
+
 int main() {
   graphics::Window window;
 
-  GLuint vaID;
-  glGenVertexArrays(1, &vaID);
-  glBindVertexArray(vaID);
+  auto buf = ([=](std::vector<GLfloat> v) {
+    ([] {
+      GLuint vaID;
+      glGenVertexArrays(1, &vaID);
+      glBindVertexArray(vaID);
+    })();
 
-  std::atomic_flag verticesSynced;
-  std::mutex vmutex;
-  std::vector<GLfloat> vertices = {-1, -1, 0, 1, -1, 0, 0, 1, 0};
+    GLuint buf;
+    glGenBuffers(1, &buf);
+    glBindBuffer(GL_ARRAY_BUFFER, buf);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * v.size(), v.data(),
+                 GL_STATIC_DRAW);
+    return buf;
+  })({-1, -1, 0, 1, -1, 0, 0, 1, 0});
 
-  GLuint buf;
-  glGenBuffers(1, &buf);
-  glBindBuffer(GL_ARRAY_BUFFER, buf);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertices.size(),
-               vertices.data(), GL_STATIC_DRAW);
+  auto vertices =
+      static_cast<GLfloat *>(glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE));
 
   auto programHandle = ([=] {
     auto vshader = std::ifstream("shaders/triangle.vert");
@@ -173,27 +263,30 @@ int main() {
         .Build();
   })();
 
-  // transform the coordinates of the triangle over time.
-  auto t = std::thread([&] {
-    std::mt19937_64 random;
-    std::uniform_real_distribution<double> dist(0.9, 1.1);
-    auto rand = std::bind(dist, random);
-    for (;;) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      std::unique_lock<std::mutex> lock(vmutex);
-      verticesSynced.clear();
-      for (auto &v : vertices) {
-        v = v * rand();
+  auto display = ([=] {
+    std::vector<Renderable *> vec;
+    auto rand = ([] {
+      std::mt19937_64 random;
+      std::uniform_real_distribution<double> dist(0.25, 0.75);
+      return std::bind(dist, random);
+    })();
+    vec.push_back(new Float(
+        new Spin(new EquilateralTriangle({rand(), rand(), rand()}, 0.2),
+                 std::chrono::seconds(4)),
+        0.25, std::chrono::seconds(10)));
+    return vec;
+  })();
+  auto render = [&] {
+    // Render items in display
+    for (auto r : display) {
+      auto v = r->Render();
+      for (auto i = 0; i < 3; i++) {
+        vertices[(i * 3) + 0] = v[i].x;
+        vertices[(i * 3) + 1] = v[i].y;
+        vertices[(i * 3) + 2] = v[i].z;
       }
     }
-  });
 
-  for (;;) {
-    if (verticesSynced.test_and_set()) {
-      std::unique_lock<std::mutex> lock(vmutex);
-      glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertices.size(),
-                   vertices.data(), GL_STATIC_DRAW);
-    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, buf);
@@ -203,6 +296,11 @@ int main() {
     glDisableVertexAttribArray(0);
 
     window.Swap();
+  };
+
+  for (;;) {
+    render();
+
     glfwPollEvents();
 
     if (window.Key(GLFW_KEY_ESCAPE) == GLFW_PRESS || window.ShouldClose()) {
