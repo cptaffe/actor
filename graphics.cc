@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -160,8 +161,7 @@ public:
   static void Stop() { stop = std::chrono::high_resolution_clock::now(); }
 
 private:
-  static std::chrono::time_point<std::chrono::high_resolution_clock> stop;
-  static std::chrono::time_point<std::chrono::high_resolution_clock> last;
+  static std::chrono::time_point<std::chrono::high_resolution_clock> stop, last;
 };
 
 class Renderable {
@@ -300,6 +300,8 @@ public:
       if (a.size() != b.size()) {
         return a.size() > b.size();
       }
+      return memcmp(&a.data()[0][0][0], &b.data()[0][0][0],
+                    a.size() * 4 * 4 * sizeof(float)) < 0;
       for (auto i = 0; i < a.size(); i++) {
         for (auto j = 0; j < 4; j++) {
           for (auto k = 0; k < 4; k++) {
@@ -347,6 +349,7 @@ public:
         mvp.push_back(projection * view * models[i]);
         elements[j++] = i;
       }
+      // Create single vertices & color entry
       auto color = glm::vec4(rand(), rand(), rand(), 1);
       for (auto i = 0; i < m.first.size(); i++) {
         for (auto j = 0; j < 4; j++) {
@@ -531,7 +534,7 @@ std::chrono::time_point<std::chrono::high_resolution_clock>
 
 int main() {
   graphics::Window w("basilisk", 400, 400);
-  auto cubes = 200;
+  auto cubes = 1024;
   graphics::Renderer renderer(
       w, ([=] {
         std::mt19937_64 random;
@@ -567,9 +570,17 @@ int main() {
                        0.1, 100.0));
 
   graphics::Timer::Start();
+  auto t = std::chrono::high_resolution_clock::now();
   for (;;) {
     graphics::Timer::Stop();
     renderer.Render();
+    auto nt = std::chrono::high_resolution_clock::now();
+    std::cout << 1 /
+                     std::chrono::duration_cast<std::chrono::duration<float>>(
+                         nt - t)
+                         .count()
+              << "\r" << std::flush;
+    t = nt;
     glfwPollEvents();
     if (renderer.Window().Key(GLFW_KEY_ESCAPE) == GLFW_PRESS ||
         renderer.Window().ShouldClose()) {
