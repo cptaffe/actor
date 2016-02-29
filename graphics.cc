@@ -154,13 +154,13 @@ class Timer {
 public:
   Timer() {}
 
-  std::chrono::duration<double> Since() {
-    return std::chrono::high_resolution_clock::now() - last;
-  }
+  std::chrono::duration<double> Since() { return stop - last; }
 
   static void Start() { last = std::chrono::high_resolution_clock::now(); }
+  static void Stop() { stop = std::chrono::high_resolution_clock::now(); }
 
 private:
+  static std::chrono::time_point<std::chrono::high_resolution_clock> stop;
   static std::chrono::time_point<std::chrono::high_resolution_clock> last;
 };
 
@@ -168,14 +168,25 @@ class Renderable {
 public:
   virtual ~Renderable(){};
 
-  virtual glm::mat4 Render() = 0;
+  virtual std::vector<glm::mat4> Render() = 0;
+
+  std::vector<glm::mat4> Apply(std::vector<glm::mat4> m) {
+    std::vector<glm::mat4> nm;
+    auto rendering = Render();
+    for (auto n : m) {
+      for (auto r : rendering) {
+        nm.push_back(n * r);
+      }
+    }
+    return nm;
+  }
 };
 
 class Renderer {
 public:
-  Renderer(Window w, std::vector<std::vector<Renderable *>> d, glm::mat4 v,
-           glm::mat4 p)
-      : window(w), display(d), view(v), projection(p), program(([=] {
+  Renderer(Window w, std::vector<std::vector<Renderable *>> m,
+           std::vector<Renderable *> d, glm::mat4 v, glm::mat4 p)
+      : window(w), model(m), display(d), view(v), projection(p), program(([=] {
           auto vshader = std::ifstream("shaders/triangle.vert");
           auto fshader = std::ifstream("shaders/triangle.frag");
           return graphics::ProgramBuilder()
@@ -209,37 +220,53 @@ public:
           return p;
         })()) {}
 
-  std::vector<glm::mat4> CreateMatrices() {
+  std::vector<glm::mat4> RenderModel() {
+    std::vector<glm::mat4> matrices;
+    for (auto m : model) {
+      std::vector<glm::mat4> matrixes = {glm::mat4(1.0)};
+      for (auto r : m) {
+        matrixes = r->Apply(matrixes);
+      }
+      matrices.insert(std::end(matrices), std::begin(matrixes),
+                      std::end(matrixes));
+    }
+    return matrices;
+  }
+
+  std::vector<glm::mat4> RenderDisplay() {
     std::vector<glm::mat4> matrices;
     for (auto d : display) {
-      glm::mat4 p(1.0);
-      for (auto r : d) {
-        p *= r->Render();
-      }
-      matrices.push_back(p);
+      auto matrixes = d->Render();
+      matrices.insert(std::end(matrices), std::begin(matrixes),
+                      std::end(matrixes));
     }
     return matrices;
   }
 
   void Render() {
     // Render items in display
-    auto m = CreateMatrices();
-    for (auto i = 0; i < m.size(); i++) {
-      for (auto j = 0; j < 4; j++) {
-        for (auto k = 0; k < 3; k++) {
-          vertices[(i * 12) + (j * 4) + k] = m[i][j][k];
-        }
-      }
-    }
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
     glVertexAttribPointer(0, 4, GL_FLOAT, false, 0, static_cast<void *>(0));
     glUseProgram(program);
-    auto mvp = projection * view;
-    glUniformMatrix4fv(mvpHandle, 1, GL_FALSE, &mvp[0][0]);
-    glDrawArrays(GL_TRIANGLES, 0, 4 * display.size());
+    auto models = RenderModel();
+    auto len = 0;
+    for (auto l = 0; l < display.size(); l++) {
+      auto d = display[l]->Render();
+      for (auto i = 0; i < d.size(); i++) {
+        for (auto j = 0; j < 4; j++) {
+          for (auto k = 0; k < 4; k++) {
+            vertices[((len + i) * 12) + (j * 4) + k] = d[i][j][k];
+          }
+        }
+      }
+      len += d.size();
+      auto mvp = projection * view * models[l];
+      glUniformMatrix4fv(mvpHandle, 1, GL_FALSE, &mvp[0][0]);
+      glDrawArrays(GL_TRIANGLES, len, 4 * d.size());
+    }
     glDisableVertexAttribArray(0);
 
     window.Swap();
@@ -250,7 +277,8 @@ public:
 private:
   // Must initialize first!
   graphics::Window window;
-  std::vector<std::vector<Renderable *>> display;
+  std::vector<std::vector<Renderable *>> model;
+  std::vector<Renderable *> display;
   glm::mat4 view, projection;
   GLuint program, mvpHandle, buffer;
   GLfloat *vertices;
@@ -261,7 +289,9 @@ private:
 class Scale : public graphics::Renderable {
 public:
   Scale(glm::vec3 s) : scale(s) {}
-  virtual glm::mat4 Render() { return glm::scale(scale); }
+  virtual std::vector<glm::mat4> Render() override {
+    return {glm::scale(scale)};
+  }
 
 private:
   glm::vec3 scale;
@@ -269,34 +299,105 @@ private:
 
 class Translate : public graphics::Renderable {
 public:
-  Translate(glm::vec3 t) : translation(t) {}
-  virtual glm::mat4 Render() { return glm::translate(translation); }
+  Translate(glm::vec3 t) : translation(glm::translate(t)) {}
+  virtual std::vector<glm::mat4> Render() override { return {translation}; }
 
 private:
-  glm::vec3 translation;
+  glm::mat4 translation;
+};
+
+class Rotate : public graphics::Renderable {
+public:
+  Rotate(double a, glm::vec3 v) : angle(a), vec(v) {}
+  virtual std::vector<glm::mat4> Render() override {
+    return {glm::rotate(static_cast<float>(angle), vec)};
+  }
+
+private:
+  double angle;
+  glm::vec3 vec;
+};
+
+class Triangle : public graphics::Renderable {
+public:
+  Triangle(glm::vec3 a, glm::vec3 b, glm::vec3 c)
+      : vertices(glm::vec4(a, 1), glm::vec4(b, 1), glm::vec4(c, 1),
+                 glm::vec4(1)) {}
+  virtual std::vector<glm::mat4> Render() override { return {vertices}; }
+
+private:
+  glm::mat4 vertices;
 };
 
 class EquilateralTriangle : public graphics::Renderable {
 public:
-  EquilateralTriangle(double r)
-      : vertices(glm::vec4(glm::vec3(1, -1, 0), 1),
-                 glm::vec4(glm::vec3(-1, -1, 0), 1),
-                 glm::vec4(glm::vec3(0, 1, 0), 1), glm::vec4(1)) {}
-  virtual glm::mat4 Render() { return vertices; }
+  EquilateralTriangle()
+      : triangle(glm::vec3(1, -1, 0), glm::vec3(-1, -1, 0),
+                 glm::vec3(0, 1, 0)) {}
+  virtual std::vector<glm::mat4> Render() override { return triangle.Render(); }
 
 private:
-  glm::mat4 vertices;
+  Triangle triangle;
+};
+
+class Square : public graphics::Renderable {
+public:
+  Square()
+      : triangles({
+            {glm::vec3(1, -1, 0), glm::vec3(-1, 1, 0), glm::vec3(1, 1, 0)},
+            {glm::vec3(1, -1, 0), glm::vec3(-1, 1, 0), glm::vec3(-1, -1, 0)},
+        }) {}
+  virtual std::vector<glm::mat4> Render() override {
+    std::vector<glm::mat4> v;
+    for (auto t : triangles) {
+      for (auto m : t.Render()) {
+        v.push_back(m);
+      }
+    }
+    return v;
+  }
+
+private:
+  std::vector<Triangle> triangles;
+};
+
+class Cube : public graphics::Renderable {
+public:
+  Cube()
+      : sides(([=] {
+          auto s0 = Square().Apply(Translate({0, 0, 1}).Render());
+          auto s1 = Square().Apply(Translate({0, 0, 1}).Apply(
+              Rotate(0.5 * glm::pi<double>(), glm::vec3(0, 1, 0)).Render()));
+
+          auto s2 = Square().Apply(Translate({0, 0, 1}).Apply(
+              Rotate(-0.5 * glm::pi<double>(), glm::vec3(0, 1, 0)).Render()));
+          auto s3 = Square().Apply(Translate({0, 0, -1}).Render());
+          auto s4 = Square().Apply(Translate({0, 0, 1}).Apply(
+              Rotate(0.5 * glm::pi<double>(), glm::vec3(1, 0, 0)).Render()));
+          auto s5 = Square().Apply(Translate({0, 0, 1}).Apply(
+              Rotate(-0.5 * glm::pi<double>(), glm::vec3(1, 0, 0)).Render()));
+          s0.insert(std::end(s0), std::begin(s1), std::end(s1));
+          s0.insert(std::end(s0), std::begin(s2), std::end(s2));
+          s0.insert(std::end(s0), std::begin(s3), std::end(s3));
+          s0.insert(std::end(s0), std::begin(s4), std::end(s4));
+          s0.insert(std::end(s0), std::begin(s5), std::end(s5));
+          return s0;
+        })()) {}
+  virtual std::vector<glm::mat4> Render() override { return sides; }
+
+private:
+  std::vector<glm::mat4> sides;
 };
 
 class Float : public graphics::Renderable {
 public:
   Float(double rad, std::chrono::duration<double> d)
       : radius(rad), duration(d) {}
-  virtual glm::mat4 Render() {
-    return glm::translate(glm::vec3(
-        0.2,
-        radius * glm::cos(timer.Since() / duration * 2 * glm::pi<double>()),
-        0.2));
+  virtual std::vector<glm::mat4> Render() override {
+    return Translate(glm::vec3(0, radius * glm::cos(timer.Since() / duration *
+                                                    2 * glm::pi<double>()),
+                               0))
+        .Render();
   }
 
 private:
@@ -308,10 +409,10 @@ private:
 class Spin : public graphics::Renderable {
 public:
   Spin(std::chrono::duration<double> d) : duration(d) {}
-  virtual glm::mat4 Render() {
-    return glm::rotate(
-        static_cast<float>(timer.Since() / duration * 2 * glm::pi<double>()),
-        glm::vec3(0, 1, 0));
+  virtual std::vector<glm::mat4> Render() {
+    return Rotate(timer.Since() / duration * 2 * glm::pi<double>(),
+                  glm::vec3(0, 1, 0))
+        .Render();
   }
 
 private:
@@ -320,30 +421,40 @@ private:
 };
 
 std::chrono::time_point<std::chrono::high_resolution_clock>
+    graphics::Timer::stop;
+std::chrono::time_point<std::chrono::high_resolution_clock>
     graphics::Timer::last;
 
 int main() {
   graphics::Window w("basilisk", 400, 400);
+  auto cubes = 100;
   graphics::Renderer renderer(
       w, ([=] {
-        auto rand = ([] {
-          std::mt19937_64 random;
-          std::uniform_real_distribution<double> dist(-1, 1);
-          return std::bind(dist, random);
-        })();
-        auto triangle = [&] {
+        std::mt19937_64 random;
+        auto rand =
+            std::bind(std::uniform_real_distribution<double>(-5, 5), random);
+        std::vector<std::vector<graphics::Renderable *>> vec;
+        auto cube = [&] {
           return std::vector<graphics::Renderable *>(
               {new Translate({rand(), rand(), rand()}),
                new Scale({0.25, 0.25, 0.25}),
-               new Float(0.25, std::chrono::seconds(1)),
-               new Spin(std::chrono::seconds(6)),
-               new EquilateralTriangle(0.2)});
+               new Float(0.25, std::chrono::milliseconds(
+                                   std::uniform_int_distribution<long>(
+                                       1000, 5000)(random))),
+               new Spin(std::chrono::milliseconds(
+                   std::uniform_int_distribution<long>(1000, 6000)(random)))});
         };
-        std::vector<std::vector<graphics::Renderable *>> vec;
-        for (auto i = 0; i < 20; i++) {
-          vec.push_back(triangle());
+        for (auto i = 0; i < cubes; i++) {
+          vec.push_back(cube());
         }
         return vec;
+      })(),
+      ([=] {
+        std::vector<graphics::Renderable *> v;
+        for (auto i = 0; i < cubes; i++) {
+          v.push_back(new Cube());
+        }
+        return v;
       })(),
       glm::lookAt(glm::vec3(4, 3, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)),
       glm::perspective(0.5 * glm::pi<double>(),
@@ -353,6 +464,7 @@ int main() {
 
   graphics::Timer::Start();
   for (;;) {
+    graphics::Timer::Stop();
     renderer.Render();
     glfwPollEvents();
     if (renderer.Window().Key(GLFW_KEY_ESCAPE) == GLFW_PRESS ||
