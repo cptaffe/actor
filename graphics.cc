@@ -195,21 +195,35 @@ public:
               .Build();
         })()),
         mvpHandle(glGetUniformLocation(program, "model_view_projection")),
-        buffer(([=] {
-          ([] {
-            GLuint vaID;
-            glGenVertexArrays(1, &vaID);
-            glBindVertexArray(vaID);
-          })();
-
-          GLuint buf;
-          glGenBuffers(1, &buf);
-          glBindBuffer(GL_ARRAY_BUFFER, buf);
-          glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * display.size() * 12,
-                       nullptr, GL_STATIC_DRAW);
-          return buf;
+        vertexArrayHandle(([] {
+          GLuint vaID;
+          glGenVertexArrays(1, &vaID);
+          return vaID;
         })()),
+        buffers({
+
+            ([=] {
+              glBindVertexArray(vertexArrayHandle);
+              GLuint buf;
+              glGenBuffers(1, &buf);
+              glBindBuffer(GL_ARRAY_BUFFER, buf);
+              glBufferData(GL_ARRAY_BUFFER,
+                           sizeof(GLfloat) * RenderDisplay().size() * 12,
+                           nullptr, GL_STATIC_DRAW);
+              return buf;
+            })(),
+            ([=] {
+              glBindVertexArray(vertexArrayHandle);
+              GLuint buf;
+              glGenBuffers(1, &buf);
+              glBindBuffer(GL_ARRAY_BUFFER, buf);
+              glBufferData(GL_ARRAY_BUFFER,
+                           sizeof(GLfloat) * RenderDisplay().size() * 12,
+                           nullptr, GL_STATIC_DRAW);
+              return buf;
+            })()}),
         vertices(([=] {
+          glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
           auto p = static_cast<GLfloat *>(
               glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE));
           if (p == nullptr) {
@@ -218,7 +232,23 @@ public:
                                          gluErrorString(glGetError()))));
           }
           return p;
-        })()) {}
+        })()),
+        colors(([=] {
+          glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
+          auto p = static_cast<GLfloat *>(
+              glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE));
+          if (p == nullptr) {
+            throw std::runtime_error("glMapBuffer error: " +
+                                     std::string(reinterpret_cast<const char *>(
+                                         gluErrorString(glGetError()))));
+          }
+          return p;
+        })()) {
+    if (display.size() != model.size()) {
+      throw std::runtime_error(
+          "display and model arrays must be the same size");
+    }
+  }
 
   std::vector<glm::mat4> RenderModel() {
     std::vector<glm::mat4> matrices;
@@ -246,19 +276,29 @@ public:
   void Render() {
     // Render items in display
 
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, buffer);
-    glVertexAttribPointer(0, 4, GL_FLOAT, false, 0, static_cast<void *>(0));
+    for (auto i = 0; i < buffers.size(); i++) {
+      glEnableVertexAttribArray(i);
+      glBindBuffer(GL_ARRAY_BUFFER, buffers[i]);
+      glVertexAttribPointer(i, 4, GL_FLOAT, false, 0, static_cast<void *>(0));
+    }
     glUseProgram(program);
+
+    // Render and write to vertex mapping
+    auto rand = std::bind(std::uniform_real_distribution<double>(0, 1),
+                          std::mt19937_64());
     auto models = RenderModel();
     auto len = 0;
     for (auto l = 0; l < display.size(); l++) {
       auto d = display[l]->Render();
+      auto color = glm::vec4(rand(), rand(), rand(), 1);
       for (auto i = 0; i < d.size(); i++) {
         for (auto j = 0; j < 4; j++) {
           for (auto k = 0; k < 4; k++) {
             vertices[((len + i) * 12) + (j * 4) + k] = d[i][j][k];
+            colors[((len + i) * 12) + (j * 4) + k] = color[k];
           }
         }
       }
@@ -267,7 +307,10 @@ public:
       glUniformMatrix4fv(mvpHandle, 1, GL_FALSE, &mvp[0][0]);
       glDrawArrays(GL_TRIANGLES, len, 4 * d.size());
     }
-    glDisableVertexAttribArray(0);
+
+    for (auto i = 0; i < buffers.size(); i++) {
+      glDisableVertexAttribArray(i);
+    }
 
     window.Swap();
   }
@@ -280,8 +323,10 @@ private:
   std::vector<std::vector<Renderable *>> model;
   std::vector<Renderable *> display;
   glm::mat4 view, projection;
-  GLuint program, mvpHandle, buffer;
-  GLfloat *vertices;
+  GLuint program, mvpHandle;
+  GLuint vertexArrayHandle;
+  std::vector<GLuint> buffers;
+  GLfloat *vertices, *colors;
 };
 
 } // namespace graphics
@@ -343,25 +388,27 @@ private:
 class Square : public graphics::Renderable {
 public:
   Square()
-      : triangles({
-            {glm::vec3(1, -1, 0), glm::vec3(-1, 1, 0), glm::vec3(1, 1, 0)},
-            {glm::vec3(1, -1, 0), glm::vec3(-1, 1, 0), glm::vec3(-1, -1, 0)},
-        }) {}
-  virtual std::vector<glm::mat4> Render() override {
-    std::vector<glm::mat4> v;
-    for (auto t : triangles) {
-      for (auto m : t.Render()) {
-        v.push_back(m);
-      }
-    }
-    return v;
-  }
+      : triangles(([=] {
+          auto triangles = std::vector<Triangle>(
+              {{glm::vec3(1, -1, 0), glm::vec3(-1, 1, 0), glm::vec3(1, 1, 0)},
+               {glm::vec3(1, -1, 0), glm::vec3(-1, 1, 0),
+                glm::vec3(-1, -1, 0)}});
+          std::vector<glm::mat4> v;
+          for (auto t : triangles) {
+            for (auto m : t.Render()) {
+              v.push_back(m);
+            }
+          }
+          return v;
+        })()) {}
+  virtual std::vector<glm::mat4> Render() override { return triangles; }
 
 private:
-  std::vector<Triangle> triangles;
+  std::vector<glm::mat4> triangles;
 };
 
 class Cube : public graphics::Renderable {
+
 public:
   Cube()
       : sides(([=] {
@@ -390,6 +437,7 @@ private:
 };
 
 class Float : public graphics::Renderable {
+
 public:
   Float(double rad, std::chrono::duration<double> d)
       : radius(rad), duration(d) {}
@@ -407,6 +455,7 @@ private:
 };
 
 class Spin : public graphics::Renderable {
+
 public:
   Spin(std::chrono::duration<double> d) : duration(d) {}
   virtual std::vector<glm::mat4> Render() {
@@ -427,7 +476,7 @@ std::chrono::time_point<std::chrono::high_resolution_clock>
 
 int main() {
   graphics::Window w("basilisk", 400, 400);
-  auto cubes = 100;
+  auto cubes = 200;
   graphics::Renderer renderer(
       w, ([=] {
         std::mt19937_64 random;
