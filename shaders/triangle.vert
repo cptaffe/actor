@@ -5,9 +5,9 @@ layout(location = 1) in vec4 color;
 
 out vec4 fragColor;
 
-uniform mat4 model_view_projection;
+uniform mat4 model_view_projection[1024];
 
 void main() {
   fragColor = color;
-  gl_Position = model_view_projection * pos;
+  gl_Position = model_view_projection[gl_InstanceID] * pos;
 }

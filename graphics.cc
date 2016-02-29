@@ -221,6 +221,16 @@ public:
                            sizeof(GLfloat) * RenderDisplay().size() * 12,
                            nullptr, GL_STATIC_DRAW);
               return buf;
+            })(),
+            ([=] {
+              glBindVertexArray(vertexArrayHandle);
+              GLuint buf;
+              glGenBuffers(1, &buf);
+              glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buf);
+              glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                           sizeof(GLfloat) * RenderDisplay().size() * 3,
+                           nullptr, GL_STATIC_DRAW);
+              return buf;
             })()}),
         vertices(([=] {
           glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
@@ -237,6 +247,17 @@ public:
           glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
           auto p = static_cast<GLfloat *>(
               glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE));
+          if (p == nullptr) {
+            throw std::runtime_error("glMapBuffer error: " +
+                                     std::string(reinterpret_cast<const char *>(
+                                         gluErrorString(glGetError()))));
+          }
+          return p;
+        })()),
+        elements(([=] {
+          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]);
+          auto p = static_cast<GLuint *>(
+              glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_READ_WRITE));
           if (p == nullptr) {
             throw std::runtime_error("glMapBuffer error: " +
                                      std::string(reinterpret_cast<const char *>(
@@ -273,6 +294,35 @@ public:
     return matrices;
   }
 
+  class Mat4Less {
+  public:
+    bool operator()(std::vector<glm::mat4> a, std::vector<glm::mat4> b) {
+      if (a.size() != b.size()) {
+        return a.size() > b.size();
+      }
+      for (auto i = 0; i < a.size(); i++) {
+        for (auto j = 0; j < 4; j++) {
+          for (auto k = 0; k < 4; k++) {
+            if (a[i][j][k] != b[i][j][k]) {
+              return a[i][j][k] > b[i][j][k];
+            }
+          }
+        }
+      }
+      return false;
+    }
+  };
+
+  // Render drawables,
+  // returns map of drawable's matrices to a vector of indices
+  std::map<std::vector<glm::mat4>, std::vector<int>, Mat4Less> MapDisplay() {
+    std::map<std::vector<glm::mat4>, std::vector<int>, Mat4Less> map;
+    for (auto i = 0; i < display.size(); i++) {
+      map[display[i]->Render()].push_back(i);
+    }
+    return map;
+  }
+
   void Render() {
     // Render items in display
 
@@ -290,22 +340,26 @@ public:
     auto rand = std::bind(std::uniform_real_distribution<double>(0, 1),
                           std::mt19937_64());
     auto models = RenderModel();
-    auto len = 0;
-    for (auto l = 0; l < display.size(); l++) {
-      auto d = display[l]->Render();
+    for (auto m : MapDisplay()) {
+      std::vector<glm::mat4> mvp;
+      auto j = 0;
+      for (auto i : m.second) {
+        mvp.push_back(projection * view * models[i]);
+        elements[j++] = i;
+      }
       auto color = glm::vec4(rand(), rand(), rand(), 1);
-      for (auto i = 0; i < d.size(); i++) {
+      for (auto i = 0; i < m.first.size(); i++) {
         for (auto j = 0; j < 4; j++) {
           for (auto k = 0; k < 4; k++) {
-            vertices[((len + i) * 12) + (j * 4) + k] = d[i][j][k];
-            colors[((len + i) * 12) + (j * 4) + k] = color[k];
+            vertices[(i * 12) + (j * 4) + k] = m.first[i][j][k];
+            colors[(i * 12) + (j * 4) + k] = color[k];
           }
         }
       }
-      len += d.size();
-      auto mvp = projection * view * models[l];
-      glUniformMatrix4fv(mvpHandle, 1, GL_FALSE, &mvp[0][0]);
-      glDrawArrays(GL_TRIANGLES, len, 4 * d.size());
+      glUniformMatrix4fv(mvpHandle, mvp.size(), GL_FALSE, &mvp.data()[0][0][0]);
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]);
+      glDrawElementsInstanced(GL_TRIANGLES, m.first.size() * 4, GL_UNSIGNED_INT,
+                              nullptr, m.second.size());
     }
 
     for (auto i = 0; i < buffers.size(); i++) {
@@ -327,6 +381,7 @@ private:
   GLuint vertexArrayHandle;
   std::vector<GLuint> buffers;
   GLfloat *vertices, *colors;
+  GLuint *elements;
 };
 
 } // namespace graphics
