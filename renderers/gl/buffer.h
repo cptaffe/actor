@@ -2,14 +2,14 @@
 #ifndef B_RENDERERS_GL_BUFFER_H_
 #define B_RENDERERS_GL_BUFFER_H_
 
-#include <GL/glew.h>
-#include <GL/glu.h>
-#include <glm/glm.hpp>
-
 #include <map>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+
+#include <GL/glew.h>
+#include <GL/glu.h>
+#include <glm/glm.hpp>
 
 namespace gl {
 
@@ -90,6 +90,16 @@ public:
     for (auto i = 0; i < copies; i++) {
       for (auto j = 0; j < 3; j++) {
         Index((i * 3) + j) = buf[j];
+      }
+    }
+  }
+
+  void Fill(std::vector<glm::vec3> buf) {
+    auto w = 3;
+    Allocate(buf.size() * w);
+    for (auto i = 0; i < buf.size(); i++) {
+      for (auto j = 0; j < w; j++) {
+        Index((i * w) + j) = buf[i][j];
       }
     }
   }

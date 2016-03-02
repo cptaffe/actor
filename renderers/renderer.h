@@ -5,9 +5,15 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#include "timer.h"
+#include "renderers/timer.h"
 
 namespace renderer {
+
+class Rasterizable {
+public:
+  virtual ~Rasterizable() {}
+  virtual std::vector<glm::vec3> Vertices() = 0;
+};
 
 // Renderable interface
 class Renderable {
@@ -28,15 +34,24 @@ public:
   std::vector<glm::mat4> Apply(Renderable *r) { return Apply(r->Render()); }
 };
 
-// Renderer interface
-class Renderer {
-  virtual ~Renderer() {}
-  virtual void Render() = 0;
-  virtual void AddRenderable(Renderable *r) = 0;
+namespace shapes {
+
+class Factory {
+public:
+  virtual ~Factory() {}
+  virtual Rasterizable *Cube() = 0;
 };
 
-// Builds appropriate renderer
-class RendererBuilder {};
+} // namespace shapes
+
+// Renderer interface
+class Renderer {
+public:
+  virtual ~Renderer() {}
+  virtual void Render() = 0;
+  virtual void AddRenderable(Rasterizable *r, std::vector<Renderable *> m) = 0;
+  virtual shapes::Factory *ShapeFactory() = 0;
+};
 
 } // namespace renderer
 
