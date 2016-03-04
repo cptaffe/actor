@@ -5,19 +5,17 @@
 #include "renderers/gl/renderer.h"
 #include "renderers/renderer.h"
 
-#include <glm/glm.hpp>
-
 namespace renderer {
 
 class Builder {
 public:
   // Add model matrix
-  Builder View(glm::mat4 v) {
+  Builder View(Renderable *v) {
     view = v;
     return *this;
   }
 
-  Builder Projection(glm::mat4 p) {
+  Builder Projection(Renderable *p) {
     projection = p;
     return *this;
   }
@@ -25,7 +23,7 @@ public:
   Renderer *Build() { return new gl::Renderer(view, projection); }
 
 private:
-  glm::mat4 view, projection;
+  Renderable *view, *projection;
 };
 
 } // namespace renderer

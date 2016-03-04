@@ -48,7 +48,7 @@ class Float : public renderer::Renderable {
 
 public:
   Float(double rad, std::chrono::duration<double> d)
-      : radius(rad), duration(d) {}
+      : radius{rad}, duration{d} {}
   virtual std::vector<glm::mat4> Render() override {
     return Translate(glm::vec3(0, radius * glm::cos(timer.Since() / duration *
                                                     2 * glm::pi<double>()),
@@ -65,8 +65,8 @@ private:
 class Spin : public renderer::Renderable {
 
 public:
-  Spin(std::chrono::duration<double> d) : duration(d) {}
-  virtual std::vector<glm::mat4> Render() {
+  Spin(std::chrono::duration<double> d) : duration{d} {}
+  virtual std::vector<glm::mat4> Render() override {
     return Rotate(timer.Since() / duration * 2 * glm::pi<double>(),
                   glm::vec3(0, 1, 0))
         .Render();
@@ -77,15 +77,29 @@ private:
   renderer::Timer timer;
 };
 
-int main() {
-  auto cubes = 10;
+class MatRenderable : public renderer::Renderable {
+public:
+  MatRenderable(glm::mat4 m) : matrix{m} {}
+  virtual std::vector<glm::mat4> Render() override { return {matrix}; }
+
+private:
+  glm::mat4 matrix;
+};
+
+int main(int argc, const char *argv[]) {
+  if (argc != 2) {
+    throw std::runtime_error("Requires number of cubes as first argument");
+  }
+  int cubes;
+  std::stringstream(argv[1]) >> cubes;
   auto renderer =
       renderer::Builder()
-          .View(glm::lookAt(glm::vec3(4, 3, 3), glm::vec3(0, 0, 0),
-                            glm::vec3(0, 1, 0)))
-          .Projection(glm::perspective(0.5 * glm::pi<double>(),
-                                       1.0, // should be window ratio
-                                       0.1, 100.0))
+          .View(new MatRenderable(glm::lookAt(
+              glm::vec3(4, 3, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0))))
+          .Projection(
+              new MatRenderable(glm::perspective(0.5 * glm::pi<double>(),
+                                                 1.0, // should be window ratio
+                                                 0.1, 100.0)))
           .Build();
   std::mt19937_64 random;
   auto rand = std::bind(std::uniform_real_distribution<double>(-1, 1), random);
