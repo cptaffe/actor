@@ -2,6 +2,8 @@
 #ifndef B_RENDERERS_BUILDER_H_
 #define B_RENDERERS_BUILDER_H_
 
+#include <functional>
+
 #include "renderers/gl/renderer.h"
 #include "renderers/renderer.h"
 
@@ -15,15 +17,18 @@ public:
     return *this;
   }
 
-  Builder Projection(Renderable *p) {
+  Builder Projection(std::function<Renderable *(size_t, size_t)> p) {
     projection = p;
     return *this;
   }
 
-  Renderer *Build() { return new gl::Renderer(view, projection); }
+  std::unique_ptr<Renderer> Build() {
+    return std::unique_ptr<Renderer>(new gl::Renderer(view, projection));
+  }
 
 private:
-  Renderable *view, *projection;
+  Renderable *view;
+  std::function<Renderable *(size_t, size_t)> projection;
 };
 
 } // namespace renderer

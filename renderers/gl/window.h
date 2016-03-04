@@ -2,8 +2,7 @@
 #ifndef B_RENDERERS_GL_WINDOW_H_
 #define B_RENDERERS_GL_WINDOW_H_
 
-#include <stdexcept>
-#include <string>
+#include <memory>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -12,48 +11,47 @@ namespace gl {
 
 class Window {
 public:
-  Window(std::string title, int w, int h) : width(w), height(h) {
-    if (!glfwInit()) {
-      throw std::runtime_error("glfw initialization failed");
+  Window(std::string title, int w, int h);
+  Window(GLFWwindow *const w);
+  Window(const Window &other) = delete;
+  ~Window();
+
+  class Binding {
+  public:
+    Binding(GLFWwindow *n) : owin{glfwGetCurrentContext()} {
+      glfwMakeContextCurrent(n);
     }
+    Binding(const Binding &other) = delete;
+    ~Binding() { glfwMakeContextCurrent(owin); }
 
-    glfwSetErrorCallback([](int l, const char *msg) {
-      throw std::runtime_error("glfw3 error: " + std::string(msg, l));
-    });
+  private:
+    GLFWwindow *owin;
+  };
 
-    glfwWindowHint(GLFW_SAMPLES, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
-    if (window == nullptr) {
-      throw std::runtime_error("glfw create window failed");
-    }
-    glfwMakeContextCurrent(window);
-
-    glewExperimental = true;
-    if (glewInit() != GLEW_OK) {
-      throw std::runtime_error("failed to initialize glew");
-    }
-
-    glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+  std::unique_ptr<Binding> Bind() const {
+    return std::unique_ptr<Binding>(new Binding(window));
   }
-
-  bool ShouldClose() { return glfwWindowShouldClose(window); }
-
-  int Key(int key) { return glfwGetKey(window, key); }
-
-  void Swapiness(int i) { glfwSwapInterval(i); }
-  void Swap() { glfwSwapBuffers(window); }
-
-  int Width() { return width; }
-  int Height() { return height; }
+  bool ShouldClose() {
+    auto b = Bind();
+    return glfwWindowShouldClose(window);
+  }
+  int Key(int key) {
+    auto b = Bind();
+    return glfwGetKey(window, key);
+  }
+  void Swapiness(int i) {
+    auto b = Bind();
+    glfwSwapInterval(i);
+  }
+  void Swap() {
+    auto b = Bind();
+    glfwSwapBuffers(window);
+  }
+  int Width() const;
+  int Height() const;
 
 private:
-  GLFWwindow *window;
-  int width, height;
+  GLFWwindow *const window;
 };
 
 } // namespace gl

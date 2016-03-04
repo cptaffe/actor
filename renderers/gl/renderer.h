@@ -32,18 +32,19 @@ namespace gl {
 
 class Renderer : public renderer::Renderer {
 public:
-  Renderer(renderer::Renderable *v, renderer::Renderable *p);
+  Renderer(renderer::Renderable *v,
+           std::function<renderer::Renderable *(size_t, size_t)>);
   virtual void AddRenderable(renderer::Rasterizable *r,
                              std::vector<renderer::Renderable *> m) override;
   virtual renderer::shapes::Factory *ShapeFactory() override;
   virtual void Render() override;
 
 private:
-  bool alive = true;
-  static gl::Window *window;
+  gl::Window window;
   std::vector<std::vector<renderer::Renderable *>> model;
   std::vector<Rasterizable *> display;
-  renderer::Renderable *view, *projection;
+  renderer::Renderable *view;
+  std::function<renderer::Renderable *(size_t w, size_t h)> projection;
   Program *program;
   GLuint mvpHandle;
 };

@@ -91,10 +91,10 @@ public:
 
   void Render() {
     // buffer all vertices & colors before drawd
-    auto buffers = std::vector<Buffer<GLfloat> *>({&_vertices, &_colors});
     auto vptrs =
         std::vector<std::shared_ptr<VertexAttributePointer<GLfloat>>>();
     {
+      auto buffers = std::vector<Buffer<GLfloat> *>({&_vertices, &_colors});
       for (auto i = 0; i < buffers.size(); i++) {
         vptrs.push_back(std::shared_ptr<VertexAttributePointer<GLfloat>>(
             new VertexAttributePointer<GLfloat>(buffers[i], i, 3, GL_FLOAT,
@@ -106,6 +106,8 @@ public:
     // TODO: why does order matter here?
     auto rand = std::bind(std::uniform_real_distribution<double>(0, 1),
                           std::mt19937_64());
+    _vertices.Clear();
+    _rasterizable->Rasterize(&_vertices);
     _colors.Clear();
     for (auto i = 0; i < _vertices.Size(); i++) {
       for (auto j = 0; j < 3; j++) {
@@ -113,8 +115,6 @@ public:
       }
     }
     _colors.Write();
-    _vertices.Clear();
-    _rasterizable->Rasterize(&_vertices);
     _vertices.Write();
     glDrawArraysInstanced(_rasterizable->Type(), 0,
                           _vertices.Size() * sizeof(GLfloat), _indices.size());
@@ -130,17 +130,10 @@ private:
 
 } // namespace
 
-Renderer::Renderer(renderer::Renderable *v, renderer::Renderable *p)
-    : view{([=] {
-        // NOTE: first constructor initializer list entry,
-        // here we can do work before the other items are initlialized
-        if (window == nullptr) {
-          window = new gl::Window("basilisk", 400, 400);
-          window->Swapiness(0);
-        }
-        return v;
-      })()},
-      projection{p}, program{([=] {
+Renderer::Renderer(renderer::Renderable *v,
+                   std::function<renderer::Renderable *(size_t w, size_t h)> p)
+    : window{"basilisk", 400, 400}, view{v}, projection{p}, program{([=] {
+        auto b = window.Bind(); // bind gl for scope
         auto vshader = std::ifstream("shaders/triangle.vert");
         auto fshader = std::ifstream("shaders/triangle.frag");
         return ProgramBuilder()
@@ -148,7 +141,11 @@ Renderer::Renderer(renderer::Renderable *v, renderer::Renderable *p)
             .AddFragmentShader(fshader)
             .Build();
       })()},
-      mvpHandle{program->UniformLocation("model_view_projection")} {
+      mvpHandle{([&] {
+        auto b = window.Bind();
+        return program->UniformLocation("model_view_projection");
+      })()} {
+  std::cout << "gl::Renderer: running constructor!" << std::endl;
   if (display.size() != model.size()) {
     throw std::runtime_error(static_cast<std::stringstream &>(
                                  std::stringstream()
@@ -161,6 +158,7 @@ Renderer::Renderer(renderer::Renderable *v, renderer::Renderable *p)
 
 void Renderer::AddRenderable(renderer::Rasterizable *r,
                              std::vector<renderer::Renderable *> m) {
+  window.Swapiness(0);
   display.push_back(([=] {
     Rasterizable *gr{dynamic_cast<Rasterizable *>(r)};
     if (gr == nullptr) {
@@ -178,10 +176,7 @@ renderer::shapes::Factory *Renderer::ShapeFactory() {
 }
 
 void Renderer::Render() {
-  if (!alive) {
-    throw std::runtime_error("gl::Renderer: Renderer is dead (possibly because "
-                             "gl::Window was closed, etc.)");
-  }
+  auto b = window.Bind();
 
   // pre-rendering
   glEnable(GL_DEPTH_TEST);
@@ -197,16 +192,17 @@ void Renderer::Render() {
          }
          return map;
        })()) {
-    RenderPass(m.first, m.second, view, projection, model, mvpHandle).Render();
+    RenderPass(m.first, m.second, view,
+               projection(window.Width(), window.Height()), model, mvpHandle)
+        .Render();
   }
 
-  window->Swap();
+  window.Swap();
   glfwPollEvents();
-  if (window->Key(GLFW_KEY_ESCAPE) == GLFW_PRESS || window->ShouldClose()) {
-    alive = false;
+  if (window.Key(GLFW_KEY_ESCAPE) == GLFW_PRESS || window.ShouldClose()) {
+    throw std::runtime_error("gl::Renderer: Renderer is dead (possibly because "
+                             "gl::Window was closed, etc.)");
   }
 }
 
 } // gl
-
-gl::Window *gl::Renderer::window;

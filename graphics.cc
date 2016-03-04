@@ -92,38 +92,60 @@ int main(int argc, const char *argv[]) {
   }
   int cubes;
   std::stringstream(argv[1]) >> cubes;
-  auto renderer =
-      renderer::Builder()
-          .View(new MatRenderable(glm::lookAt(
-              glm::vec3(4, 3, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0))))
-          .Projection(
-              new MatRenderable(glm::perspective(0.5 * glm::pi<double>(),
-                                                 1.0, // should be window ratio
-                                                 0.1, 100.0)))
-          .Build();
+  auto renderers = std::vector<std::unique_ptr<renderer::Renderer>>();
+  for (auto i = 0; i < 1; i++) {
+    renderers.push_back(
+        renderer::Builder()
+            .View(new MatRenderable(glm::lookAt(
+                glm::vec3(4, 3, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0))))
+            .Projection([](size_t w, size_t h) {
+              return new MatRenderable(glm::perspective(
+                  0.5 * glm::pi<double>(),
+                  static_cast<double>(w) /
+                      static_cast<double>(h), // should be window ratio
+                  0.1,
+                  100.0));
+            })
+            .Build());
+  }
   std::mt19937_64 random;
   auto rand = std::bind(std::uniform_real_distribution<double>(-1, 1), random);
-  for (auto i = 0; i < cubes; i++) {
-    renderer->AddRenderable(
-        renderer->ShapeFactory()->Cube(),
-        std::vector<renderer::Renderable *>(
-            {new Translate({rand(), rand(), rand()}),
-             new Scale({0.25, 0.25, 0.25}),
-             new Float(0.25, std::chrono::milliseconds(
-                                 std::uniform_int_distribution<long>(
-                                     1000, 5000)(random))),
-             new Spin(std::chrono::milliseconds(
-                 std::uniform_int_distribution<long>(1000, 6000)(random)))}));
+  for (auto &renderer : renderers) {
+    for (auto i = 0; i < cubes; i++) {
+      renderer->AddRenderable(
+          renderer->ShapeFactory()->Cube(),
+          std::vector<renderer::Renderable *>(
+              {new Translate({rand(), rand(), rand()}),
+               new Scale({0.25, 0.25, 0.25}),
+               new Float(0.25, std::chrono::milliseconds(
+                                   std::uniform_int_distribution<long>(
+                                       1000, 5000)(random))),
+               new Spin(std::chrono::milliseconds(
+                   std::uniform_int_distribution<long>(1000, 6000)(random)))}));
+    }
   }
 
   renderer::Timer::Start();
   auto t = std::chrono::high_resolution_clock::now();
   for (;;) {
     renderer::Timer::Stop();
-    try {
-      renderer->Render();
-    } catch (const std::exception &e) {
-      std::cerr << e.what() << std::endl;
+    std::vector<size_t> erase;
+    {
+      size_t i = 0;
+      for (auto &renderer : renderers) {
+        try {
+          renderer->Render();
+        } catch (const std::exception &e) {
+          erase.push_back(i);
+          std::cerr << e.what() << std::endl;
+        }
+        i++;
+      }
+    }
+    for (auto e : erase) {
+      renderers.erase(renderers.begin() + e);
+    }
+    if (renderers.size() == 0) {
       break;
     }
     auto nt = std::chrono::high_resolution_clock::now();
