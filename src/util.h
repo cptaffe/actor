@@ -1,6 +1,7 @@
+// Copyright 2016 Connor Taffe
 
-#ifndef B_UTIL_H_
-#define B_UTIL_H_
+#ifndef SRC_UTIL_H_
+#define SRC_UTIL_H_
 
 #include <condition_variable>
 #include <functional>
@@ -10,14 +11,12 @@
 #include <thread>
 #include <vector>
 
-template <typename T> class ConsumerQueue {
-public:
-  ConsumerQueue(std::function<void(T)> c) : consumer(c) {}
-  ~ConsumerQueue() {
-    for (auto t : threads) {
-      delete t;
-    }
-  }
+namespace util {
+
+template <typename T>
+class ConsumerQueue {
+ public:
+  explicit ConsumerQueue(std::function<void(T)> c) : consumer{c} {}
 
   void Put(T t) {
     std::unique_lock<std::mutex> lock(mutex);
@@ -37,29 +36,29 @@ public:
 
   void Kill() {
     std::unique_lock<std::mutex> lock(mutex);
-    alive = false;          // end queue
-    condition.notify_all(); // tell all consumers
+    alive = false;           // end queue
+    condition.notify_all();  // tell all consumers
   }
 
-  void Run(int t) {
-    for (int i = 0; i < t; i++) {
-      threads.push_back(new std::thread([=] { Consume(); }));
+  void Run(uint t) {
+    for (auto i = 0; i < t; i++) {
+      threads.push_back(std::thread{[=] { Consume(); }});
     }
   }
 
   void Wait() {
     // Join worker threads
-    for (auto t : threads) {
-      t->join();
+    for (auto &t : threads) {
+      t.join();
     }
   }
 
-private:
+ private:
   std::function<void(T)> consumer;
-  std::vector<std::thread *> threads;
+  std::vector<std::thread> threads;
   std::mutex mutex;
   std::condition_variable condition;
-  bool alive = true; // set to false once terminated
+  bool alive = true;  // set to false once terminated
   std::queue<T> queue;
 
   void Consume() {
@@ -78,4 +77,6 @@ private:
   }
 };
 
-#endif // B_UTIL_H_
+}  // namespace util
+
+#endif  // SRC_UTIL_H_

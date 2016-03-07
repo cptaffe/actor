@@ -1,18 +1,26 @@
+// Copyright 2016 Connor Taffe
+
+#include "src/renderer/renderers/gl/window.h"
 
 #include <stdexcept>
 #include <string>
 
-#include "renderers/gl/window.h"
+namespace {
+static thread_local bool glfw3Inited = false;
+}
 
 namespace gl {
 Window::Window(std::string title, int w, int h)
     : window{([&] {
-        if (!glfwInit()) {
-          throw std::runtime_error("glfw initialization failed");
+        if (!glfw3Inited) {
+          if (!glfwInit()) {
+            throw std::runtime_error("glfw initialization failed");
+          }
+          glfw3Inited = true;
         }
 
         glfwSetErrorCallback([](int err, const char *msg) {
-          // TODO: thread-based context-has-been-set boolean
+          // TODO(cptaffe): thread-based context-has-been-set boolean
           if (err == GLFW_NO_CURRENT_CONTEXT) {
             return;
           }
@@ -33,9 +41,9 @@ Window::Window(std::string title, int w, int h)
   }
 
   glfwSetFramebufferSizeCallback(window,
-                                 [](GLFWwindow *window, int width, int height) {
+                                 [](GLFWwindow *win, int width, int height) {
                                    auto o = glfwGetCurrentContext();
-                                   glfwMakeContextCurrent(window);
+                                   glfwMakeContextCurrent(win);
                                    glViewport(0, 0, width, height);
                                    glfwMakeContextCurrent(o);
                                  });
@@ -66,4 +74,4 @@ int Window::Height() const {
   return height;
 }
 
-} // namespace gl
+}  // namespace gl

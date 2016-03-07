@@ -1,11 +1,12 @@
+// Copyright 2016 Connor Taffe
+
+#include "src/renderer/renderers/gl/shader.h"
 
 #include <iostream>
 #include <iterator>
 #include <map>
 #include <string>
 #include <vector>
-
-#include "renderers/gl/shader.h"
 
 namespace gl {
 
@@ -19,10 +20,10 @@ void compileShaders(const GLuint &programHandle,
                    GLenum status, GLuint handle, std::string err) {
     GLint res;
     f(handle, status, &res);
-    int ll;
+    GLsizei ll;
     f(handle, GL_INFO_LOG_LENGTH, &ll);
     if (res == GL_FALSE) {
-      std::vector<char> v(ll + 1);
+      std::vector<char> v(static_cast<size_t>(ll) + 1);
       l(handle, ll + 1, &ll, v.data());
       throw std::runtime_error(err + ": " +
                                std::string(reinterpret_cast<const char *>(
@@ -53,7 +54,7 @@ void deleteShaders(const GLuint &programHandle,
   }
 }
 
-} // namespace
+}  // namespace
 
 ProgramBuilder::ProgramBuilder() : programHandle(glCreateProgram()) {
   if (!([=] {
@@ -65,9 +66,9 @@ ProgramBuilder::ProgramBuilder() : programHandle(glCreateProgram()) {
   }
 }
 
-ProgramBuilder ProgramBuilder::AddVertexShader(std::istream &src) {
-  return AddVertexShader(std::string(std::istreambuf_iterator<char>(src),
-                                     std::istreambuf_iterator<char>()));
+ProgramBuilder ProgramBuilder::AddVertexShader(std::istream *src) {
+  return AddVertexShader(std::string{std::istreambuf_iterator<char>{*src},
+                                     std::istreambuf_iterator<char>{}});
 }
 
 ProgramBuilder ProgramBuilder::AddVertexShader(std::string src) {
@@ -75,9 +76,9 @@ ProgramBuilder ProgramBuilder::AddVertexShader(std::string src) {
   return *this;
 }
 
-ProgramBuilder ProgramBuilder::AddFragmentShader(std::istream &src) {
-  return AddFragmentShader(std::string(std::istreambuf_iterator<char>(src),
-                                       std::istreambuf_iterator<char>()));
+ProgramBuilder ProgramBuilder::AddFragmentShader(std::istream *src) {
+  return AddFragmentShader(std::string{std::istreambuf_iterator<char>{*src},
+                                       std::istreambuf_iterator<char>{}});
 }
 
 ProgramBuilder ProgramBuilder::AddFragmentShader(std::string src) {
@@ -85,10 +86,10 @@ ProgramBuilder ProgramBuilder::AddFragmentShader(std::string src) {
   return *this;
 }
 
-Program *ProgramBuilder::Build() {
+std::unique_ptr<Program> ProgramBuilder::Build() {
   compileShaders(programHandle, shaders);
   deleteShaders(programHandle, shaders);
-  return new Program(programHandle);
+  return std::unique_ptr<Program>{new Program{programHandle}};
 }
 
-} // namespace gl
+}  // namespace gl

@@ -1,30 +1,32 @@
+// Copyright 2016 Connor Taffe
 
-#ifndef B_RENDERERS_GL_WINDOW_H_
-#define B_RENDERERS_GL_WINDOW_H_
-
-#include <memory>
+#ifndef SRC_RENDERER_RENDERERS_GL_WINDOW_H_
+#define SRC_RENDERER_RENDERERS_GL_WINDOW_H_
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+#include <memory>
+#include <string>
+
 namespace gl {
 
 class Window {
-public:
+ public:
   Window(std::string title, int w, int h);
-  Window(GLFWwindow *const w);
+  explicit Window(GLFWwindow *const w);
   Window(const Window &other) = delete;
   ~Window();
 
   class Binding {
-  public:
-    Binding(GLFWwindow *n) : owin{glfwGetCurrentContext()} {
+   public:
+    explicit Binding(GLFWwindow *n) : owin{glfwGetCurrentContext()} {
       glfwMakeContextCurrent(n);
     }
     Binding(const Binding &other) = delete;
     ~Binding() { glfwMakeContextCurrent(owin); }
 
-  private:
+   private:
     GLFWwindow *owin;
   };
 
@@ -50,10 +52,10 @@ public:
   int Width() const;
   int Height() const;
 
-private:
+ private:
   GLFWwindow *const window;
 };
 
-} // namespace gl
+}  // namespace gl
 
-#endif // B_RENDERERS_GL_WINDOW_H_
+#endif  // SRC_RENDERER_RENDERERS_GL_WINDOW_H_
