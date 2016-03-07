@@ -19,8 +19,8 @@ Window::Window(std::string title, int w, int h)
         // but here we are just locking and hoping that it doesn't
         // blow up.
         // Works so far, but jank.
-        std::unique_lock<std::mutex> lock(glfwInitLock);
         if (!glfw3Inited) {
+          std::unique_lock<std::mutex> lock(glfwInitLock);
           if (!glfwInit()) {
             throw std::runtime_error("glfw initialization failed");
           }
