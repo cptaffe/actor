@@ -2,16 +2,24 @@
 
 #include "src/renderer/renderers/gl/window.h"
 
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
 namespace {
+static std::mutex glfwInitLock;
 static thread_local bool glfw3Inited = false;
 }
 
 namespace gl {
 Window::Window(std::string title, int w, int h)
     : window{([&] {
+        // HACK HACK HACK
+        // glfwInit() should only be called from the main thread
+        // but here we are just locking and hoping that it doesn't
+        // blow up.
+        // Works so far, but jank.
+        std::unique_lock<std::mutex> lock(glfwInitLock);
         if (!glfw3Inited) {
           if (!glfwInit()) {
             throw std::runtime_error("glfw initialization failed");
