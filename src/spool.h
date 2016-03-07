@@ -3,15 +3,14 @@
 #ifndef SRC_SPOOL_H_
 #define SRC_SPOOL_H_
 
-#include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include "src/base.h"
-#include "src/interfaces.h"
 #include "src/util.h"
 
 // Event Spool singleton
@@ -41,32 +40,6 @@ class Spool : public Actor {
 
   void Wait() { handles.Wait(); }
 
-  void Register(std::string id, std::shared_ptr<Actor> a) {
-    std::unique_lock<std::mutex> lck(actorsMtx);
-    actors.insert({id, a});
-  }
-
-  void Unregister(std::string id) {
-    std::unique_lock<std::mutex> lck(actorsMtx);
-    actors.erase(id);
-  }
-
-  void Unregister(std::shared_ptr<Actor> a) {
-    for (auto i = actors.begin(); i != actors.end(); i++) {
-      if (i->second == a) {
-        actors.erase(i);
-      }
-    }
-  }
-
-  std::shared_ptr<Actor> ActorById(std::string id) {
-    auto a = actors.find(id);
-    if (a != actors.end()) {
-      return a->second;
-    }
-    return nullptr;
-  }
-
  private:
   Spool()
       : handles(
@@ -77,7 +50,7 @@ class Spool : public Actor {
   Spool &operator=(Spool const &) = delete;
   static Spool *instance;
   std::mutex actorsMtx;
-  std::map<std::string, std::shared_ptr<Actor>> actors;
+  std::set<std::shared_ptr<Actor>> actors;
   util::ConsumerQueue<std::pair<std::shared_ptr<Actor>, std::shared_ptr<Event>>>
       handles;
 };

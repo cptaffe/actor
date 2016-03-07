@@ -14,8 +14,11 @@
 #include "src/renderer/renderers/gl/shader.h"
 #include "src/renderer/renderers/gl/shapes.h"
 #include "src/renderer/renderers/gl/window.h"
+#include "src/spool.h"
 
 namespace gl {
+
+class Renderer;
 
 class RenderPass {
  public:
@@ -39,15 +42,15 @@ class RenderThread {
  public:
   RenderThread(
       std::function<std::vector<RenderPass>(Window *, GLint)> renderFunc);
-  [[noreturn]] void Run();
+  void Run();
 
  private:
   gl::Window window;
-  Program program;
+  std::shared_ptr<Program> program;
   GLint mvpHandle;
   std::function<std::vector<RenderPass>(Window *, GLint)> renderFunc;
 
-  void Render(std::vector<RenderPass> renders);
+  bool Render(std::vector<RenderPass> renders);
 };
 
 class Renderer : public renderer::Renderer {
@@ -55,6 +58,7 @@ class Renderer : public renderer::Renderer {
   Renderer(
       std::shared_ptr<renderer::Renderable> v,
       std::function<std::shared_ptr<renderer::Renderable>(size_t, size_t)>);
+  ~Renderer() {}
   std::unique_ptr<renderer::shapes::Factory> ShapeFactory() override;
   void Render() override {}
   void Handle(std::shared_ptr<Event> const e) override;

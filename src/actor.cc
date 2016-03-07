@@ -5,11 +5,11 @@
 namespace actors {
 
 void Sayer::Handle(std::shared_ptr<Event> e) {
-  ([&](events::Say *s) {
+  ([&](std::shared_ptr<events::Say> s) {
     if (s != nullptr) {
-      queue.Put(s->Said());
+      queue.Put(s->Message());
     }
-  })(dynamic_cast<events::Say *>(&(*e)));
+  })(std::dynamic_pointer_cast<events::Say>(e));
 }
 
 }  // namespace actors

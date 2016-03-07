@@ -73,17 +73,21 @@ int main(int argc, const char *argv[]) {
             << std::endl;
 
   auto s = Spool::Instance();
-  s->Register("speech", std::shared_ptr<Actor>(new actors::Sayer()));
+  s->Handle(std::shared_ptr<Event>{
+      new events::Spawn{std::shared_ptr<Actor>{new actors::Sayer{}}}});
   s->Run();  // run spool
 
   auto renderers = std::vector<std::shared_ptr<renderer::Renderer>>();
+  std::mt19937_64 random;
+  auto camrand =
+      std::bind(std::uniform_real_distribution<double>(-4, 4), random);
   for (auto i = 0; i < windows; i++) {
     const auto renderer =
         renderer::Builder()
             .View(std::shared_ptr<renderer::Renderable>(
                 new renderables::MatRenderable(
-                    glm::lookAt(glm::vec3(4, 3, 3), glm::vec3(0, 0, 0),
-                                glm::vec3(0, 1, 0)))))
+                    glm::lookAt(glm::vec3(camrand(), camrand(), camrand()),
+                                glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)))))
             .Projection([](size_t w, size_t h) {
               return std::shared_ptr<renderer::Renderable>(
                   new renderables::MatRenderable(glm::perspective(
@@ -95,32 +99,27 @@ int main(int argc, const char *argv[]) {
             })
             .Build();
     renderers.push_back(renderer);
-    s->Register(
-        static_cast<std::stringstream &>(std::stringstream() << "renderer" << i)
-            .str(),
-        std::shared_ptr<Actor>{renderer});
+    s->Handle(std::shared_ptr<Event>{
+        new events::Spawn{std::shared_ptr<Actor>{renderer}}});
   }
 
-  std::mt19937_64 random;
   auto rand = std::bind(std::uniform_real_distribution<double>(-1, 1), random);
-  for (auto &renderer : renderers) {
-    for (auto i = 0; i < cubes; i++) {
-      s->Handle(std::unique_ptr<Event>(new event::Spawn(
-          renderer->ShapeFactory()->Cube(),
-          std::vector<std::shared_ptr<renderer::Renderable>>(
-              {std::shared_ptr<renderer::Renderable>(
-                   new renderables::Translate({rand(), rand(), rand()})),
-               std::shared_ptr<renderer::Renderable>(
-                   new renderables::Scale({0.25, 0.25, 0.25})),
-               std::shared_ptr<renderer::Renderable>(new renderables::Float(
-                   0.25, std::chrono::milliseconds(
-                             std::uniform_int_distribution<uint64_t>(
-                                 1000, 5000)(random)))),
-               std::shared_ptr<renderer::Renderable>(
-                   new renderables::Spin(std::chrono::milliseconds(
-                       std::uniform_int_distribution<uint64_t>(
-                           1000, 6000)(random))))}))));
-    }
+  for (auto i = 0; i < cubes; i++) {
+    s->Handle(std::unique_ptr<Event>(new event::Spawn(
+        renderers[0]->ShapeFactory()->Cube(),
+        std::vector<std::shared_ptr<renderer::Renderable>>(
+            {std::shared_ptr<renderer::Renderable>(
+                 new renderables::Translate({rand(), rand(), rand()})),
+             std::shared_ptr<renderer::Renderable>(
+                 new renderables::Scale({0.25, 0.25, 0.25})),
+             std::shared_ptr<renderer::Renderable>(new renderables::Float(
+                 0.25, std::chrono::milliseconds(
+                           std::uniform_int_distribution<uint64_t>(
+                               1000, 5000)(random)))),
+             std::shared_ptr<renderer::Renderable>(
+                 new renderables::Spin(std::chrono::milliseconds(
+                     std::uniform_int_distribution<uint64_t>(
+                         1000, 6000)(random))))}))));
   }
 
   s->Wait();

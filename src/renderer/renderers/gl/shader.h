@@ -18,6 +18,8 @@ namespace gl {
 class Program {
  public:
   explicit Program(GLuint p) : program(p) {}
+  Program(const Program &) = delete;
+  ~Program() { glDeleteProgram(program); }
   void Use() { glUseProgram(program); }
   GLint UniformLocation(std::string s) {
     auto u = glGetUniformLocation(program, s.c_str());
@@ -43,7 +45,7 @@ class ProgramBuilder {
   ProgramBuilder AddVertexShader(std::string src);
   ProgramBuilder AddFragmentShader(std::istream *src);
   ProgramBuilder AddFragmentShader(std::string src);
-  std::unique_ptr<Program> Build();
+  std::shared_ptr<Program> Build();
 
  private:
   GLuint programHandle;

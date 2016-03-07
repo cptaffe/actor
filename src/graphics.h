@@ -16,7 +16,6 @@
 
 #include "src/actor.h"
 #include "src/events.h"
-#include "src/interfaces.h"
 #include "src/renderer/builder.h"
 #include "src/renderer/renderer.h"
 

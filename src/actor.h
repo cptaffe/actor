@@ -11,7 +11,6 @@
 
 #include "src/base.h"
 #include "src/events.h"
-#include "src/interfaces.h"
 #include "src/spool.h"
 #include "src/util.h"
 

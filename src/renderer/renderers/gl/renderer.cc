@@ -19,6 +19,7 @@
 #include "src/renderer/renderers/gl/shader.h"
 #include "src/renderer/renderers/gl/shapes.h"
 #include "src/renderer/renderers/gl/window.h"
+#include "src/spool.h"
 
 namespace gl {
 namespace {
@@ -85,7 +86,7 @@ void RenderPass::Render() {
     }
   }
 
-  auto cb = Buffer<GLfloat>(colors), vb = Buffer<GLfloat>(vertices);
+  Buffer<GLfloat> cb{colors}, vb{vertices};
 
   auto vptrs = std::vector<std::shared_ptr<VertexAttributePointer<GLfloat>>>();
   {
@@ -104,20 +105,20 @@ void RenderPass::Render() {
 RenderThread::RenderThread(
     std::function<std::vector<RenderPass>(Window *, GLint)> renderf)
     : window{"basilisk", 400, 400},
-      program{([=] {
+      program{([&] {
         auto b = window.Bind();  // bind gl for scope
         auto vshader =
             std::ifstream("src/renderer/renderers/gl/shaders/triangle.vert");
         auto fshader =
             std::ifstream("src/renderer/renderers/gl/shaders/triangle.frag");
-        return *ProgramBuilder()
-                    .AddVertexShader(&vshader)
-                    .AddFragmentShader(&fshader)
-                    .Build();
+        return ProgramBuilder()
+            .AddVertexShader(&vshader)
+            .AddFragmentShader(&fshader)
+            .Build();
       })()},
       mvpHandle{([&] {
         auto b = window.Bind();
-        return program.UniformLocation("model_view_projection");
+        return program->UniformLocation("model_view_projection");
       })()},
       renderFunc(renderf) {
   window.Swapiness(0);
@@ -125,18 +126,20 @@ RenderThread::RenderThread(
 
 void RenderThread::Run() {
   for (;;) {
-    Render(renderFunc(&window, mvpHandle));
+    if (!Render(renderFunc(&window, mvpHandle))) {
+      return;
+    }
   }
 }
 
-void RenderThread::Render(std::vector<RenderPass> renders) {
+bool RenderThread::Render(std::vector<RenderPass> renders) {
   auto b = window.Bind();
 
   // pre-rendering
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  program.Use();
+  program->Use();
 
   for (auto &r : renders) {
     r.Render();
@@ -145,10 +148,9 @@ void RenderThread::Render(std::vector<RenderPass> renders) {
   window.Swap();
   glfwPollEvents();
   if (window.Key(GLFW_KEY_ESCAPE) == GLFW_PRESS || window.ShouldClose()) {
-    throw std::runtime_error(
-        "gl::Renderer: Renderer is dead (possibly because "
-        "gl::Window was closed, etc.)");
+    return false;
   }
+  return true;
 }
 
 Renderer::Renderer(

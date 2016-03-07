@@ -86,7 +86,7 @@ ProgramBuilder ProgramBuilder::AddFragmentShader(std::string src) {
   return *this;
 }
 
-std::unique_ptr<Program> ProgramBuilder::Build() {
+std::shared_ptr<Program> ProgramBuilder::Build() {
   compileShaders(programHandle, shaders);
   deleteShaders(programHandle, shaders);
   return std::unique_ptr<Program>{new Program{programHandle}};

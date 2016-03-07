@@ -39,6 +39,8 @@ class Buffer {
       : Buffer(t) {
     Write(values);
   }
+  Buffer(const Buffer &) = delete;
+  ~Buffer() { glDeleteBuffers(1, &handle); }
 
   size_t Size() const { return size; }
   GLuint Handle() const { return handle; }
