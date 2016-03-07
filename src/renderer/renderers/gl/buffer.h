@@ -23,7 +23,6 @@ class VertexArray {
   GLuint Handle() const { return handle; }
 
  private:
-  static thread_local VertexArray *bound;
   GLuint handle;
 };
 
@@ -52,14 +51,14 @@ class Buffer {
   void Bind() { glBindBuffer(type, handle); }
 
  private:
-  static VertexArray *va;
+  static thread_local VertexArray *va;
   size_t size = {0};
   GLenum type;
   GLuint handle;
 };
 
 template <typename T>
-VertexArray *Buffer<T>::va = nullptr;
+thread_local VertexArray *Buffer<T>::va = nullptr;
 
 }  // namespace gl
 
